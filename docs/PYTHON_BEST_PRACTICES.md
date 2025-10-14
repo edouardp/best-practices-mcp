@@ -153,6 +153,333 @@ strict = true
 ### structlog JSON logger; add context via processors; never print() in production
 **Why:** structlog provides structured logging that's queryable in log aggregation systems. Processors allow you to add consistent context (timestamps, service info) to all log entries. JSON format integrates seamlessly with CloudWatch Logs Insights and other tools. print() statements are not captured by logging systems and lack context.
 
+**Context Logging is Critical:** Adding context into the call stack (or equivalent in async code) is essential for producing meaningful logs. When a line is logged, we should see the context (what operation, which user, what request) as structured properties, not just the log message.
+
+```python
+import structlog
+import contextvars
+import traceback
+import uuid
+from typing import Any, Dict
+from aws_lambda_powertools import Logger
+
+# Context variables for async context propagation
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar('request_id')
+user_id_var: contextvars.ContextVar[str] = contextvars.ContextVar('user_id')
+operation_var: contextvars.ContextVar[str] = contextvars.ContextVar('operation')
+
+# Custom processors (equivalent to Serilog enrichers)
+def add_request_context(logger, method_name, event_dict):
+    """Add request context to all log entries"""
+    try:
+        event_dict['request_id'] = request_id_var.get()
+    except LookupError:
+        pass
+    
+    try:
+        event_dict['user_id'] = user_id_var.get()
+    except LookupError:
+        pass
+    
+    try:
+        event_dict['operation'] = operation_var.get()
+    except LookupError:
+        pass
+    
+    return event_dict
+
+def add_exception_context(logger, method_name, event_dict):
+    """Enhanced exception logging with full context"""
+    if 'exception' in event_dict:
+        exc = event_dict['exception']
+        event_dict.update({
+            'exception_type': exc.__class__.__name__,
+            'exception_module': exc.__class__.__module__,
+            'exception_traceback': traceback.format_exception(type(exc), exc, exc.__traceback__),
+            'exception_cause': str(exc.__cause__) if exc.__cause__ else None,
+            'exception_context': str(exc.__context__) if exc.__context__ else None,
+        })
+    return event_dict
+
+def add_service_context(logger, method_name, event_dict):
+    """Add service-level context"""
+    import os
+    event_dict.update({
+        'service_name': os.getenv('SERVICE_NAME', 'unknown'),
+        'service_version': os.getenv('SERVICE_VERSION', '1.0.0'),
+        'environment': os.getenv('ENVIRONMENT', 'development'),
+        'aws_region': os.getenv('AWS_REGION', 'us-east-1'),
+    })
+    return event_dict
+
+# Configure structlog with comprehensive processors
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        add_service_context,  # Custom processor
+        add_request_context,  # Custom processor
+        add_exception_context,  # Custom processor
+        structlog.processors.format_exc_info,
+        structlog.processors.JSONRenderer()
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger()
+
+# Context manager for operation context
+from contextlib import contextmanager
+
+@contextmanager
+def log_context(**kwargs):
+    """Add context that flows through the entire operation"""
+    tokens = []
+    for key, value in kwargs.items():
+        if key == 'request_id':
+            tokens.append(request_id_var.set(value))
+        elif key == 'user_id':
+            tokens.append(user_id_var.set(value))
+        elif key == 'operation':
+            tokens.append(operation_var.set(value))
+    
+    try:
+        yield
+    finally:
+        for token in tokens:
+            try:
+                token.var.reset(token)
+            except LookupError:
+                pass
+
+# Service implementation with context logging
+class OrderService:
+    def __init__(self):
+        self.logger = structlog.get_logger(__name__)
+    
+    async def process_order(self, order_data: dict, user_id: str) -> dict:
+        request_id = str(uuid.uuid4())
+        
+        # Set context for the entire operation
+        with log_context(
+            request_id=request_id,
+            user_id=user_id,
+            operation="process_order"
+        ):
+            # Bind additional context to this logger instance
+            log = self.logger.bind(
+                order_amount=order_data.get('amount'),
+                item_count=len(order_data.get('items', [])),
+                payment_method=order_data.get('payment_method')
+            )
+            
+            log.info("Starting order processing", 
+                    user_id=user_id, 
+                    amount=order_data.get('amount'))
+            
+            try:
+                # Validate order
+                await self._validate_order(order_data, log)
+                
+                # Process payment
+                payment_result = await self._process_payment(order_data, log)
+                
+                # Create order
+                order = await self._create_order(order_data, payment_result, log)
+                
+                log.info("Order processed successfully", 
+                        order_id=order['id'],
+                        final_amount=order['amount'])
+                
+                # Log business event
+                self._log_business_event("order_created", {
+                    "order_id": order['id'],
+                    "amount": order['amount'],
+                    "user_id": user_id
+                })
+                
+                return order
+                
+            except ValidationError as e:
+                log.warning("Order validation failed", 
+                           validation_errors=e.errors,
+                           exception=e)
+                raise
+            except PaymentError as e:
+                log.error("Payment processing failed", 
+                         payment_error_code=e.error_code,
+                         exception=e)
+                raise
+            except Exception as e:
+                log.error("Unexpected error processing order", 
+                         exception=e,
+                         exc_info=True)
+                raise
+    
+    async def _validate_order(self, order_data: dict, log):
+        """Validate order with context logging"""
+        with log_context(operation="validate_order"):
+            validation_log = log.bind(validation_step="order_validation")
+            
+            validation_log.debug("Starting order validation")
+            
+            if not order_data.get('items'):
+                validation_log.warning("Order validation failed: no items")
+                raise ValidationError("Order must contain at least one item")
+            
+            if order_data.get('amount', 0) <= 0:
+                validation_log.warning("Order validation failed: invalid amount")
+                raise ValidationError("Order amount must be positive")
+            
+            validation_log.debug("Order validation completed successfully")
+    
+    async def _process_payment(self, order_data: dict, log):
+        """Process payment with context logging"""
+        with log_context(operation="process_payment"):
+            payment_log = log.bind(
+                payment_method=order_data.get('payment_method'),
+                payment_amount=order_data.get('amount')
+            )
+            
+            payment_log.info("Processing payment")
+            
+            # Simulate payment processing
+            payment_result = {
+                'id': str(uuid.uuid4()),
+                'status': 'completed',
+                'amount': order_data['amount']
+            }
+            
+            payment_log.info("Payment processed successfully", 
+                           payment_id=payment_result['id'])
+            
+            return payment_result
+    
+    def _log_business_event(self, event_name: str, event_data: dict):
+        """Log business events with special context"""
+        business_log = self.logger.bind(
+            event_type="business",
+            event_name=event_name
+        )
+        
+        business_log.info(f"Business event: {event_name}", **event_data)
+
+# Lambda handler with context
+from aws_lambda_powertools import Logger as PowertoolsLogger
+from aws_lambda_powertools.utilities.typing import LambdaContext
+
+# Combine structlog with Lambda Powertools
+powertools_logger = PowertoolsLogger()
+
+def lambda_handler(event: dict, context: LambdaContext) -> dict:
+    request_id = context.aws_request_id
+    
+    # Set up context for the entire request
+    with log_context(
+        request_id=request_id,
+        operation="lambda_handler"
+    ):
+        log = structlog.get_logger().bind(
+            lambda_request_id=context.aws_request_id,
+            function_name=context.function_name,
+            remaining_time_ms=context.get_remaining_time_in_millis()
+        )
+        
+        log.info("Lambda invocation started")
+        
+        try:
+            # Extract user context
+            user_id = event.get('requestContext', {}).get('authorizer', {}).get('userId')
+            
+            if user_id:
+                with log_context(user_id=user_id):
+                    order_service = OrderService()
+                    result = await order_service.process_order(event['body'], user_id)
+                    
+                    log.info("Lambda invocation completed successfully")
+                    return {
+                        'statusCode': 200,
+                        'body': json.dumps(result)
+                    }
+            else:
+                log.warning("No user ID found in request context")
+                return {
+                    'statusCode': 401,
+                    'body': json.dumps({'error': 'Unauthorized'})
+                }
+                
+        except Exception as e:
+            log.error("Lambda invocation failed", 
+                     exception=e,
+                     exc_info=True)
+            return {
+                'statusCode': 500,
+                'body': json.dumps({'error': 'Internal server error'})
+            }
+
+# Middleware for web frameworks (FastAPI example)
+from fastapi import FastAPI, Request
+import time
+
+app = FastAPI()
+
+@app.middleware("http")
+async def logging_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    
+    with log_context(
+        request_id=request_id,
+        operation="http_request"
+    ):
+        log = structlog.get_logger().bind(
+            method=request.method,
+            url=str(request.url),
+            user_agent=request.headers.get("user-agent"),
+            client_ip=request.client.host
+        )
+        
+        start_time = time.time()
+        
+        try:
+            response = await call_next(request)
+            
+            duration_ms = (time.time() - start_time) * 1000
+            
+            log.info("Request completed",
+                    status_code=response.status_code,
+                    duration_ms=round(duration_ms, 2))
+            
+            response.headers["x-request-id"] = request_id
+            return response
+            
+        except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            
+            log.error("Request failed",
+                     duration_ms=round(duration_ms, 2),
+                     exception=e)
+            raise
+```
+
+**Key Processor Benefits:**
+- **add_request_context()**: Automatically adds request/user context to all log entries
+- **add_exception_context()**: Provides rich exception information including cause chains and full tracebacks
+- **add_service_context()**: Adds service-level metadata for better log aggregation
+- **Context Variables**: Enable context to flow through async operations seamlessly
+
+**Context Logging Best Practices:**
+- Use `contextvars` for async-safe context propagation
+- Implement custom processors to add consistent context
+- Use `log_context()` context manager for operation-scoped context
+- Bind additional context to logger instances for specific operations
+- Log business events with special context for analytics and monitoring
+
 ### Include: service name, version, env, trace ids, customer/account id (if safe)
 **Why:** Service name and version help identify which service and deployment generated logs. Environment information prevents confusion between dev/staging/prod logs. Trace IDs enable correlation across distributed systems. Customer/account IDs help with support and debugging, but must be handled carefully for privacy compliance.
 

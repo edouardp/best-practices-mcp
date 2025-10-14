@@ -178,6 +178,256 @@ public class OrderRepository
 ### Logging: ILogger<T> + Serilog (JSON to stdout)
 **Why:** ILogger<T> provides structured logging with category-based filtering and is the .NET standard. Serilog offers rich structured logging capabilities with excellent performance. JSON output to stdout integrates seamlessly with container orchestration platforms and log aggregation systems like CloudWatch or ELK stack.
 
+**Context Logging is Critical:** Adding context into the call stack (or equivalent in async code) is essential for producing meaningful logs. When a line is logged, we should see the context (what operation, which user, what request) as structured properties, not just the log message.
+
+```csharp
+// Program.cs - Serilog configuration with enrichers
+using Serilog;
+using Serilog.Enrichers.Span;
+using Serilog.Exceptions;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("System", LogEventLevel.Warning)
+    .Enrich.FromLogContext()  // Critical for context logging
+    .Enrich.WithEnvironmentName()
+    .Enrich.WithMachineName()
+    .Enrich.WithProcessId()
+    .Enrich.WithThreadId()
+    .Enrich.WithSpan()  // OpenTelemetry integration
+    .Enrich.WithExceptionDetails()  // Rich exception logging
+    .Enrich.With<CorrelationIdEnricher>()  // Custom enricher
+    .WriteTo.Console(new JsonFormatter())
+    .CreateLogger();
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog();
+
+// Custom enricher for correlation IDs
+public class CorrelationIdEnricher : ILogEventEnricher
+{
+    public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
+    {
+        var correlationId = Activity.Current?.Id ?? 
+                           Thread.CurrentThread.ManagedThreadId.ToString();
+        
+        logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty(
+            "CorrelationId", correlationId));
+        
+        // Add user context if available
+        if (logEvent.Properties.TryGetValue("UserId", out var userId))
+        {
+            logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty(
+                "UserContext", $"User:{userId}"));
+        }
+    }
+}
+
+// Service implementation with context logging
+public class OrderService
+{
+    private readonly ILogger<OrderService> _logger;
+    
+    public OrderService(ILogger<OrderService> logger)
+    {
+        _logger = logger;
+    }
+    
+    public async Task<Order> ProcessOrderAsync(CreateOrderRequest request, string userId)
+    {
+        // Push context onto the log context stack
+        using var context = LogContext.PushProperty("UserId", userId)
+            .PushProperty("OrderAmount", request.Amount)
+            .PushProperty("Operation", "ProcessOrder")
+            .PushProperty("RequestId", Guid.NewGuid());
+        
+        _logger.LogInformation("Starting order processing for user {UserId} with amount {Amount:C}", 
+            userId, request.Amount);
+        
+        try
+        {
+            // Validate order
+            await ValidateOrderAsync(request);
+            
+            // Process payment
+            var paymentResult = await ProcessPaymentAsync(request);
+            using var paymentContext = LogContext.PushProperty("PaymentId", paymentResult.Id);
+            
+            _logger.LogInformation("Payment processed successfully with ID {PaymentId}", 
+                paymentResult.Id);
+            
+            // Create order
+            var order = await CreateOrderAsync(request, paymentResult);
+            
+            _logger.LogInformation("Order {OrderId} created successfully", order.Id);
+            
+            return order;
+        }
+        catch (ValidationException ex)
+        {
+            // Exception enricher will automatically add exception details
+            _logger.LogWarning(ex, "Order validation failed for user {UserId}", userId);
+            throw;
+        }
+        catch (PaymentException ex)
+        {
+            _logger.LogError(ex, "Payment processing failed for user {UserId}", userId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error processing order for user {UserId}", userId);
+            throw;
+        }
+    }
+    
+    private async Task ValidateOrderAsync(CreateOrderRequest request)
+    {
+        using var context = LogContext.PushProperty("ValidationStep", "OrderValidation");
+        
+        _logger.LogDebug("Validating order with {ItemCount} items", request.Items.Count);
+        
+        if (request.Items.Count == 0)
+        {
+            _logger.LogWarning("Order validation failed: No items in order");
+            throw new ValidationException("Order must contain at least one item");
+        }
+        
+        _logger.LogDebug("Order validation completed successfully");
+    }
+}
+
+// Middleware for request context
+public class RequestContextMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<RequestContextMiddleware> _logger;
+    
+    public RequestContextMiddleware(RequestDelegate next, ILogger<RequestContextMiddleware> logger)
+    {
+        _next = next;
+        _logger = logger;
+    }
+    
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var requestId = context.Request.Headers["X-Request-ID"].FirstOrDefault() 
+                       ?? Guid.NewGuid().ToString();
+        
+        // Add request context to all logs in this request
+        using var logContext = LogContext.PushProperty("RequestId", requestId)
+            .PushProperty("RequestPath", context.Request.Path)
+            .PushProperty("RequestMethod", context.Request.Method)
+            .PushProperty("UserAgent", context.Request.Headers["User-Agent"].FirstOrDefault());
+        
+        // Add to response headers for tracing
+        context.Response.Headers.Add("X-Request-ID", requestId);
+        
+        var stopwatch = Stopwatch.StartNew();
+        
+        try
+        {
+            await _next(context);
+            
+            _logger.LogInformation("Request completed in {ElapsedMs}ms with status {StatusCode}",
+                stopwatch.ElapsedMilliseconds, context.Response.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Request failed after {ElapsedMs}ms", 
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+    }
+}
+
+// Extension methods for common logging patterns
+public static class LoggerExtensions
+{
+    public static IDisposable BeginScope<T>(this ILogger<T> logger, string operation, object parameters = null)
+    {
+        var properties = new Dictionary<string, object>
+        {
+            ["Operation"] = operation,
+            ["OperationId"] = Guid.NewGuid()
+        };
+        
+        if (parameters != null)
+        {
+            foreach (var prop in parameters.GetType().GetProperties())
+            {
+                properties[prop.Name] = prop.GetValue(parameters);
+            }
+        }
+        
+        return logger.BeginScope(properties);
+    }
+    
+    public static void LogBusinessEvent<T>(this ILogger<T> logger, string eventName, object eventData)
+    {
+        using var context = LogContext.PushProperty("EventType", "Business")
+            .PushProperty("EventName", eventName);
+        
+        logger.LogInformation("Business event: {EventName} with data {@EventData}", 
+            eventName, eventData);
+    }
+}
+
+// Usage in controllers
+[ApiController]
+[Route("api/[controller]")]
+public class OrdersController : ControllerBase
+{
+    private readonly ILogger<OrdersController> _logger;
+    private readonly OrderService _orderService;
+    
+    public OrdersController(ILogger<OrdersController> logger, OrderService orderService)
+    {
+        _logger = logger;
+        _orderService = orderService;
+    }
+    
+    [HttpPost]
+    public async Task<IActionResult> CreateOrder([FromBody] CreateOrderRequest request)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        
+        using var scope = _logger.BeginScope("CreateOrder", new { UserId = userId, Amount = request.Amount });
+        
+        try
+        {
+            var order = await _orderService.ProcessOrderAsync(request, userId);
+            
+            _logger.LogBusinessEvent("OrderCreated", new { OrderId = order.Id, Amount = order.Amount });
+            
+            return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { Error = ex.Message });
+        }
+        catch (PaymentException ex)
+        {
+            return UnprocessableEntity(new { Error = "Payment processing failed" });
+        }
+    }
+}
+```
+
+**Key Enricher Benefits:**
+- **FromLogContext()**: Enables context properties to flow through the call stack
+- **WithExceptionDetails()**: Provides rich exception information including inner exceptions, stack traces, and custom properties
+- **WithSpan()**: Integrates with OpenTelemetry for distributed tracing correlation
+- **Custom Enrichers**: Add application-specific context like correlation IDs, user information, or business context
+
+**Context Logging Best Practices:**
+- Use `LogContext.PushProperty()` to add context that flows through the entire operation
+- Implement request middleware to add request-level context
+- Use structured logging with named parameters, not string interpolation
+- Add business context (user ID, operation type, entity IDs) to make logs searchable
+- Use scopes for operations that span multiple method calls
+
 ### Observability: OpenTelemetry + X-Ray exporter
 **Why:** OpenTelemetry is the industry standard for observability, providing vendor-neutral telemetry collection. X-Ray integration gives you distributed tracing across AWS services, helping you identify performance bottlenecks and understand request flows in microservice architectures.
 
