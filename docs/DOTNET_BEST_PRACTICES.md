@@ -357,6 +357,198 @@ public class OrderServiceTests
 ### WebApplicationFactory<T> + Testcontainers for integration tests
 **Why:** WebApplicationFactory provides an in-memory test server that closely mimics your production environment without external dependencies. Testcontainers spin up real database and service instances in Docker, ensuring your integration tests run against the same technology stack as production, catching integration issues that mocks might miss.
 
+**Vertical Slice Testing:** We prefer vertical slice testing that goes all the way down to a real database running in TestContainers, even within our unit test suites. This approach enhances our tests' ability to simulate real-world production scenarios, catching data access issues, transaction behavior, and database-specific logic that mocks cannot replicate.
+
+```csharp
+// NuGet packages needed
+// <PackageReference Include="Testcontainers" Version="3.6.0" />
+// <PackageReference Include="Testcontainers.MySql" Version="3.6.0" />
+// <PackageReference Include="Testcontainers.Redis" Version="3.6.0" />
+// <PackageReference Include="Testcontainers.LocalStack" Version="3.6.0" />
+
+public class IntegrationTestBase : IAsyncLifetime
+{
+    private readonly MySqlContainer _mysqlContainer;
+    private readonly RedisContainer _redisContainer;
+    private readonly LocalStackContainer _localStackContainer;
+    protected WebApplicationFactory<Program> Factory { get; private set; }
+
+    public IntegrationTestBase()
+    {
+        _mysqlContainer = new MySqlBuilder()
+            .WithDatabase("testdb")
+            .WithUsername("testuser")
+            .WithPassword("testpass")
+            .WithPortBinding(3306, true)
+            .Build();
+
+        _redisContainer = new RedisBuilder()
+            .WithPortBinding(6379, true)
+            .Build();
+
+        // LocalStack for AWS services in CI/CD
+        // Note: Not all AWS features are available in the free version of LocalStack
+        _localStackContainer = new LocalStackBuilder()
+            .WithServices(LocalStackService.S3, LocalStackService.Sqs, LocalStackService.Sns)
+            .WithPortBinding(4566, true)
+            .Build();
+    }
+
+    public async Task InitializeAsync()
+    {
+        await _mysqlContainer.StartAsync();
+        await _redisContainer.StartAsync();
+        await _localStackContainer.StartAsync();
+
+        Factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureTestServices(services =>
+                {
+                    // Replace database connection
+                    services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                    services.AddDbContext<ApplicationDbContext>(options =>
+                        options.UseMySql(_mysqlContainer.GetConnectionString(),
+                            ServerVersion.AutoDetect(_mysqlContainer.GetConnectionString())));
+
+                    // Replace Redis connection
+                    services.RemoveAll<IConnectionMultiplexer>();
+                    services.AddSingleton<IConnectionMultiplexer>(_ =>
+                        ConnectionMultiplexer.Connect(_redisContainer.GetConnectionString()));
+
+                    // Configure AWS services to use LocalStack
+                    services.Configure<AWSOptions>(options =>
+                    {
+                        options.DefaultClientConfig.ServiceURL = _localStackContainer.GetConnectionString();
+                        options.DefaultClientConfig.UseHttp = true;
+                        options.DefaultClientConfig.AuthenticationRegion = "us-east-1";
+                    });
+
+                    // Override AWS credentials for LocalStack
+                    services.AddSingleton<IAmazonS3>(_ => new AmazonS3Client(
+                        new BasicAWSCredentials("test", "test"),
+                        new AmazonS3Config
+                        {
+                            ServiceURL = _localStackContainer.GetConnectionString(),
+                            UseHttp = true,
+                            ForcePathStyle = true
+                        }));
+                });
+            });
+
+        // Run database migrations
+        using var scope = Factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await context.Database.MigrateAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await Factory.DisposeAsync();
+        await _mysqlContainer.DisposeAsync();
+        await _redisContainer.DisposeAsync();
+        await _localStackContainer.DisposeAsync();
+    }
+}
+
+// Vertical slice test example - tests entire feature stack
+public class OrderProcessingTests : IntegrationTestBase
+{
+    [Fact]
+    public async Task Given_ValidOrder_When_ProcessingOrder_Should_CreateOrderAndSendNotification()
+    {
+        // Arrange - Set up test data in real database
+        using var scope = Factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        
+        var customer = new Customer { Id = Guid.NewGuid(), Email = "test@example.com" };
+        context.Customers.Add(customer);
+        await context.SaveChangesAsync();
+
+        var client = Factory.CreateClient();
+        var orderRequest = new CreateOrderRequest
+        {
+            CustomerId = customer.Id,
+            Items = new[] { new OrderItem { ProductId = 1, Quantity = 2, Price = 10.00m } }
+        };
+
+        // Act - Call the actual API endpoint
+        var response = await client.PostAsJsonAsync("/api/orders", orderRequest);
+
+        // Assert - Verify database state and side effects
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        
+        var order = await context.Orders
+            .Include(o => o.Items)
+            .FirstOrDefaultAsync(o => o.CustomerId == customer.Id);
+        
+        order.Should().NotBeNull();
+        order.Items.Should().HaveCount(1);
+        order.TotalAmount.Should().Be(20.00m);
+        order.Status.Should().Be(OrderStatus.Pending);
+
+        // Verify Redis cache was updated
+        var redis = scope.ServiceProvider.GetRequiredService<IConnectionMultiplexer>();
+        var db = redis.GetDatabase();
+        var cachedOrder = await db.StringGetAsync($"order:{order.Id}");
+        cachedOrder.Should().NotBeNull();
+
+        // Verify AWS SNS message was sent (via LocalStack)
+        var snsClient = scope.ServiceProvider.GetRequiredService<IAmazonSimpleNotificationService>();
+        // Note: In real tests, you'd verify the message was published
+        // LocalStack provides endpoints to check sent messages
+    }
+}
+
+// Performance considerations for TestContainers
+public class TestContainerPerformanceTests : IClassFixture<DatabaseFixture>
+{
+    private readonly DatabaseFixture _fixture;
+
+    public TestContainerPerformanceTests(DatabaseFixture fixture)
+    {
+        _fixture = fixture;
+    }
+
+    [Fact]
+    public async Task DatabaseOperations_Should_PerformWithinAcceptableTime()
+    {
+        // Reuse container across tests in the same class for better performance
+        using var scope = _fixture.Factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var stopwatch = Stopwatch.StartNew();
+        
+        // Test database operations
+        var orders = await context.Orders.Take(100).ToListAsync();
+        
+        stopwatch.Stop();
+        stopwatch.ElapsedMilliseconds.Should().BeLessThan(1000); // 1 second max
+    }
+}
+
+// Shared fixture for better performance across test classes
+public class DatabaseFixture : IntegrationTestBase
+{
+    // Container is shared across all tests in classes that use this fixture
+    // Reduces container startup overhead
+}
+```
+
+**LocalStack Integration Notes:**
+- LocalStack provides AWS-compatible services for local development and testing
+- Free version includes core services like S3, SQS, SNS, Lambda, DynamoDB
+- Advanced features (Kinesis, ECS, RDS, etc.) require LocalStack Pro
+- Perfect for CI/CD environments where you need AWS-like behavior without actual AWS costs
+- Use for integration tests that need to verify AWS service interactions
+
+**Performance Best Practices:**
+- Use `IClassFixture<T>` to share containers across tests in the same class
+- Consider `ICollectionFixture<T>` for sharing across multiple test classes
+- Implement proper cleanup in `DisposeAsync()` to prevent resource leaks
+- Use container health checks to ensure services are ready before running tests
+- Consider parallel test execution limits when using multiple containers
+
 ### Stryker.NET for mutation testing on domain assemblies
 **Why:** Mutation testing validates the quality of your tests by introducing small changes (mutations) to your code and checking if tests catch them. This ensures your tests actually verify the behavior they claim to test, not just achieve code coverage through execution.
 
