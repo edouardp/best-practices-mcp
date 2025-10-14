@@ -869,7 +869,49 @@ def handle_user_request():
 
 ---
 
-## 8. FinOps & Governance
+## 8. EARS Requirements
+
+**EARS (Easy Approach to Requirements Syntax) format for AWS development requirements:**
+
+### Ubiquitous Requirements
+- The system SHALL use SSM Parameter Store SecureString for secrets and configuration
+- The system SHALL publish events to SNS and subscribe with SQS (never raw SQS)
+- The system SHALL use CloudFormation for all infrastructure with cfn-lint validation
+- The system SHALL implement structured logging with JSON output to CloudWatch
+- The system SHALL use per-service IAM roles with least privilege principles
+- The system SHALL tag all resources with App, Env, Owner, CostCenter, and DataClass
+- The system SHALL implement health checks at /health/live and /health/ready
+
+### Event-Driven Requirements
+- WHEN a message is published to SNS, the system SHALL include message attributes for routing
+- WHEN a Lambda function is invoked, the system SHALL propagate trace context across services
+- WHEN an ECS task starts, the system SHALL validate configuration and dependencies
+- WHEN a deployment occurs, the system SHALL run smoke tests to verify functionality
+- WHEN an alarm triggers, the system SHALL send notifications to the appropriate team
+
+### Unwanted Behavior Requirements
+- IF wildcard permissions are used in IAM policies, the system SHALL fail security review
+- IF secrets are hardcoded in code or configuration, the system SHALL fail security scanning
+- IF resources are untagged, the system SHALL fail governance checks
+- IF public S3 access is enabled, the system SHALL fail security validation
+- IF container images have critical vulnerabilities, the system SHALL prevent deployment
+
+### State-Driven Requirements
+- WHILE processing SQS messages, the system SHALL handle failures with DLQ and retry logic
+- WHILE running in production, the system SHALL use ARM64 architecture for cost optimization
+- WHILE handling sensitive data, the system SHALL use envelope encryption with KMS
+- WHILE in multi-AZ deployment, the system SHALL distribute load across availability zones
+
+### Optional Feature Requirements
+- WHERE high availability is required, the system SHOULD implement blue/green deployments
+- WHERE cost optimization is important, the system SHOULD use Spot instances for batch workloads
+- WHERE compliance is required, the system SHOULD implement VPC endpoints for AWS services
+- WHERE performance is critical, the system SHOULD use CloudFront for content delivery
+
+### Complex Requirements
+- WHEN an ECS service is deployed AND health checks fail, the system SHALL stop the deployment, maintain the previous version, alert the operations team, and provide rollback instructions
+- WHEN a Lambda function processes an event AND the processing fails, the system SHALL retry with exponential backoff, log the failure with full context, and move to DLQ after max retries
+- WHEN a CloudFormation stack update is initiated AND validation fails, the system SHALL prevent the update, preserve the current state, log the validation errors, and notify the deployment team
 
 ### Mandatory tags: App, Env, Owner, CostCenter, DataClass
 **Why:** Consistent tagging enables cost allocation, resource management, and automated governance policies. App and Env tags help identify resources and their purpose. Owner tags enable accountability and contact information for issues. CostCenter tags enable chargeback and budget allocation. DataClass tags help implement appropriate security and compliance controls based on data sensitivity.
@@ -1019,11 +1061,13 @@ def generate_cost_report_by_tags():
 
 ---
 
-## 9. Checklists
+## 9. FinOps & Governance
+
+---
+
+## 10. Checklists
 
 **Why this checklist matters:** This checklist serves as a final verification that all critical AWS practices are implemented. Each item represents a decision that significantly impacts security, cost, reliability, or operational efficiency. Regular checklist reviews during architecture reviews and before production deployments help ensure consistency across projects and prevent regression of important practices.
-
-- [ ] Parameter Store (SecureString) wired; SecretsMgr only with rotation
 - [ ] SNS→SQS with DLQs; FIFO where needed
 - [ ] OTEL traces→X-Ray, logs→CloudWatch, metrics→Alarms
 - [ ] WAF enabled on API/CloudFront; Shield active

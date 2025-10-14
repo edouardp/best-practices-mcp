@@ -109,7 +109,49 @@
 
 ---
 
-## 6. Documentation & DX
+## 6. EARS Requirements
+
+**EARS (Easy Approach to Requirements Syntax) format for SDLC requirements:**
+
+### Ubiquitous Requirements
+- The system SHALL use trunk-based development with short-lived branches
+- The system SHALL implement comprehensive Definition of Done including tests, docs, and telemetry
+- The system SHALL enforce quality gates with warnings-as-errors and coverage thresholds
+- The system SHALL implement observability with logs, metrics, and traces from day one
+- The system SHALL conduct blameless postmortems with tracked action items
+- The system SHALL use conventional commits with generated changelogs
+- The system SHALL validate infrastructure with cfn-lint and cfn-nag
+
+### Event-Driven Requirements
+- WHEN code is committed, the system SHALL run lint, test, coverage, build, scan, and deploy pipeline
+- WHEN a pull request is created, the system SHALL create ephemeral environments where feasible
+- WHEN tests fail, the system SHALL prevent deployment and notify the development team
+- WHEN security scans detect vulnerabilities, the system SHALL block the release
+- WHEN an incident occurs, the system SHALL initiate incident response procedures
+
+### Unwanted Behavior Requirements
+- IF branches live longer than 2 days, the system SHALL flag for review
+- IF test coverage falls below thresholds, the system SHALL fail the build
+- IF secrets are detected in code, the system SHALL prevent commit
+- IF ADRs are missing for architectural decisions, the system SHALL fail review
+- IF runbooks are outdated, the system SHALL prevent production deployment
+
+### State-Driven Requirements
+- WHILE in development, the system SHALL provide fast feedback loops with CI
+- WHILE conducting code reviews, the system SHALL enforce quality standards
+- WHILE in production, the system SHALL monitor SLIs and alert on SLO violations
+- WHILE handling incidents, the system SHALL follow escalation procedures
+
+### Optional Feature Requirements
+- WHERE risk is high, the system SHOULD implement canary or blue/green deployments
+- WHERE complexity is high, the system SHOULD conduct threat modeling with STRIDE
+- WHERE performance matters, the system SHOULD run load and soak testing
+- WHERE resilience is critical, the system SHOULD conduct chaos engineering exercises
+
+### Complex Requirements
+- WHEN a feature is developed AND it affects external surfaces, the system SHALL conduct threat modeling, implement feature flags, update documentation, add telemetry, and define rollback procedures
+- WHEN a production incident occurs AND it affects users, the system SHALL execute incident response, communicate with stakeholders, implement immediate fixes, and schedule blameless postmortem within 48 hours
+- WHEN a release is deployed AND smoke tests fail, the system SHALL automatically rollback, preserve logs and metrics, alert the on-call team, and prevent further deployments until issues are resolved
 
 ### README.md with purpose, local dev steps, env vars, health endpoints
 **Why:** A comprehensive README reduces onboarding time and makes the codebase more accessible to new team members. Including purpose helps developers understand the service's role in the larger system. Local development steps enable quick setup and contribution. Environment variable documentation prevents configuration issues. Health endpoint information enables proper monitoring and debugging.
@@ -125,11 +167,11 @@
 
 ---
 
-## 7. Checklists
+## 7. Documentation & DX
 
 **Why this checklist matters:** This checklist serves as a final verification that all critical SDLC practices are followed for each change. Each item represents a quality gate that significantly impacts system reliability, security, maintainability, or operational readiness. Regular checklist usage during code reviews and before releases helps ensure consistency across the team and prevents regression of important practices.
 
-- [ ] ADR written/updated
+**Why this checklist matters:** This checklist serves as a final verification that all critical SDLC practices are followed for each change. Each item represents a quality gate that significantly impacts system reliability, security, maintainability, or operational readiness. Regular checklist usage during code reviews and before releases helps ensure consistency across the team and prevents regression of important practices.
 - [ ] Telemetry (logs/traces/metrics) added
 - [ ] Tests (unit/integration/contract) passing, coverage gates met
 - [ ] Security scans clean; SBOM archived

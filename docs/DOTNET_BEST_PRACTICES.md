@@ -1097,9 +1097,53 @@ ENTRYPOINT ["dotnet", "MyApi.dll"]
 
 ---
 
-## 12. CI/CD Snippets
+## 12. EARS Requirements
 
-**Why these specific steps matter:**
+**EARS (Easy Approach to Requirements Syntax) format for .NET development requirements:**
+
+### Ubiquitous Requirements
+- The system SHALL use dependency injection for all service registrations
+- The system SHALL treat compiler warnings as errors in CI builds
+- The system SHALL use structured logging with JSON output
+- The system SHALL implement health check endpoints at `/health/live` and `/health/ready`
+- The system SHALL use parameterized queries for all database operations
+- The system SHALL validate all external inputs using FluentValidation
+- The system SHALL use TimeProvider instead of DateTime.UtcNow for testability
+
+### Event-Driven Requirements
+- WHEN a request is received, the system SHALL add correlation IDs to log context
+- WHEN an exception occurs, the system SHALL log structured exception details with full context
+- WHEN a database migration runs, the system SHALL use transactional execution with rollback capability
+- WHEN a service starts, the system SHALL validate configuration using DataAnnotations
+- WHEN an HTTP request fails, the system SHALL retry with exponential backoff and jitter
+
+### Unwanted Behavior Requirements
+- IF keyed services are used, the system SHALL reject the implementation
+- IF global state is detected, the system SHALL fail code review
+- IF test coverage falls below 90% for domain assemblies, the system SHALL fail the build
+- IF unsafe deserialization is attempted, the system SHALL prevent execution
+- IF secrets are hardcoded, the system SHALL fail security scanning
+
+### State-Driven Requirements
+- WHILE processing requests, the system SHALL maintain request context in log scope
+- WHILE running integration tests, the system SHALL use TestContainers for real dependencies
+- WHILE handling async operations, the system SHALL propagate CancellationTokens
+- WHILE in production mode, the system SHALL disable debug logging levels
+
+### Optional Feature Requirements
+- WHERE performance is critical, the system SHOULD use prepared statements
+- WHERE high availability is required, the system SHOULD implement circuit breakers
+- WHERE data is sensitive, the system SHOULD use envelope encryption with KMS
+- WHERE caching improves performance, the system SHOULD implement Redis caching
+
+### Complex Requirements
+- WHEN a user submits an order AND payment processing is required, the system SHALL validate the order, process payment with idempotency, create the order record, and publish order events
+- WHEN an API endpoint is called AND the request contains invalid data, the system SHALL return HTTP 400 with structured error details AND log the validation failure with request context
+- WHEN a background job fails AND retry attempts are exhausted, the system SHALL move the message to a dead letter queue AND alert the operations team
+
+---
+
+## 13. CI/CD Snippets
 
 ### Lint and analyze step
 **Why:** Running linting and analysis before tests catches style and potential logic issues early, preventing wasted time on test runs that would fail anyway. The -warnaserror flag ensures warnings don't accumulate as technical debt. Format verification prevents inconsistent code style from entering the main branch.
@@ -1119,14 +1163,14 @@ steps:
     command: dotnet test --collect:"XPlat Code Coverage" /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura /p:Threshold=90
 ```
 
+**Why these specific steps matter:**
+
 ---
 
-## 13. Checklist
+## 14. Checklist
 
 **Why this checklist matters:** This checklist serves as a final verification that all critical practices are implemented. Each item represents a decision that significantly impacts code quality, maintainability, security, or performance. Regular checklist reviews during code reviews and before releases help ensure consistency across projects and prevent regression of important practices.
-
 - [ ] DI everywhere; no keyed services
-- [ ] TimeProvider injected; FakeTimeProvider in tests
 - [ ] Dapper + DbUp + MySqlConnector
 - [ ] Serilog JSON + OTEL tracing
 - [ ] xUnit + AwesomeAssertions + Testcontainers

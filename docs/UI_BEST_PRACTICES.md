@@ -672,7 +672,49 @@ export default defineConfig({
 
 ---
 
-## 8. Deploy & Monitor
+## 8. EARS Requirements
+
+**EARS (Easy Approach to Requirements Syntax) format for UI development requirements:**
+
+### Ubiquitous Requirements
+- The system SHALL use strict TypeScript with "strict": true configuration
+- The system SHALL generate typed API clients from OpenAPI specifications
+- The system SHALL use Element Plus components with auto-import configuration
+- The system SHALL implement accessibility checks with Axe in CI
+- The system SHALL enforce ESLint and Prettier rules with zero warnings
+- The system SHALL achieve minimum 80% test coverage with Vitest
+- The system SHALL use vue-i18n for all user-facing text
+
+### Event-Driven Requirements
+- WHEN an API request is made, the system SHALL add correlation IDs to request headers
+- WHEN a form is submitted, the system SHALL validate inputs using typed models
+- WHEN an error occurs, the system SHALL display user-friendly notifications via ElNotification
+- WHEN a route changes, the system SHALL prefetch next likely routes for performance
+- WHEN accessibility violations are detected, the system SHALL fail the build
+
+### Unwanted Behavior Requirements
+- IF inline scripts are used, the system SHALL reject them via CSP
+- IF secrets are embedded in code, the system SHALL fail security scanning
+- IF accessibility thresholds are not met, the system SHALL fail CI checks
+- IF bundle size exceeds limits, the system SHALL fail the build
+- IF TypeScript compilation fails, the system SHALL prevent deployment
+
+### State-Driven Requirements
+- WHILE loading data, the system SHALL display skeleton loaders or loading states
+- WHILE processing forms, the system SHALL disable submit buttons to prevent double submission
+- WHILE in development mode, the system SHALL provide detailed error information
+- WHILE handling large datasets, the system SHALL implement virtual scrolling
+
+### Optional Feature Requirements
+- WHERE performance is critical, the system SHOULD implement route-level code splitting
+- WHERE user experience matters, the system SHOULD provide optimistic updates
+- WHERE data is frequently accessed, the system SHOULD implement client-side caching
+- WHERE real-time updates are needed, the system SHOULD use WebSocket connections
+
+### Complex Requirements
+- WHEN a user submits a form AND validation fails, the system SHALL highlight invalid fields, display error messages, focus the first invalid field, and prevent form submission
+- WHEN an API call fails AND the error is recoverable, the system SHALL retry the request with exponential backoff, show a retry button to the user, and log the failure with request context
+- WHEN a user navigates to a protected route AND authentication is required, the system SHALL redirect to login, preserve the intended destination, and redirect back after successful authentication
 
 ### S3 + CloudFront with Origin Access Control (OAC)
 **Why:** S3 provides cost-effective static hosting with high availability. CloudFront CDN improves global performance and provides additional security features. OAC (Origin Access Control) ensures S3 buckets aren't directly accessible, improving security. WAF on the distribution protects against common web attacks and bot traffic.
@@ -689,11 +731,13 @@ export default defineConfig({
 
 ---
 
-## 9. Checklist
+## 9. Deploy & Monitor
+
+---
+
+## 10. Checklist
 
 **Why this checklist matters:** This checklist serves as a final verification that all critical practices are implemented. Each item represents a decision that significantly impacts user experience, security, performance, or maintainability. Regular checklist reviews during code reviews and before releases help ensure consistency across projects and prevent regression of important practices.
-
-- [ ] OpenAPI-typed client + Axios interceptors
 - [ ] ESLint+Prettier passing; vue-tsc passes
 - [ ] Vitest coverage ≥ 80%
 - [ ] Element Plus auto-import + theme tokens

@@ -1205,11 +1205,55 @@ def test_order_service_uses_cache():
 
 ---
 
-## 10. Checklists
+## 10. EARS Requirements
+
+**EARS (Easy Approach to Requirements Syntax) format for Python development requirements:**
+
+### Ubiquitous Requirements
+- The system SHALL use Python 3.13 with pinned exact versions in lockfiles
+- The system SHALL use uv for dependency management and virtual environments
+- The system SHALL treat warnings as errors in CI builds
+- The system SHALL use structured logging with JSON output via structlog
+- The system SHALL implement OpenTelemetry tracing with X-Ray export
+- The system SHALL use SSM Parameter Store for configuration and secrets
+- The system SHALL validate all inputs using Pydantic models where validation is required
+
+### Event-Driven Requirements
+- WHEN a Lambda function is invoked, the system SHALL add request context to log scope
+- WHEN an exception occurs, the system SHALL log structured exception details with full traceback
+- WHEN a configuration parameter changes, the system SHALL refresh cached values within 5 minutes
+- WHEN an AWS API call fails, the system SHALL retry with exponential backoff and jitter
+- WHEN a feature flag is toggled, the system SHALL apply changes without service restart
+
+### Unwanted Behavior Requirements
+- IF pickle deserialization is used, the system SHALL reject the implementation
+- IF global state is detected, the system SHALL fail code review
+- IF test coverage falls below 90% for domain modules, the system SHALL fail the build
+- IF unsafe yaml.load is used, the system SHALL prevent execution
+- IF secrets are hardcoded, the system SHALL fail security scanning
+
+### State-Driven Requirements
+- WHILE processing requests, the system SHALL maintain correlation context using contextvars
+- WHILE running integration tests, the system SHALL use testcontainers for real dependencies
+- WHILE in Lambda execution, the system SHALL use lazy imports for heavy dependencies
+- WHILE handling async operations, the system SHALL propagate trace context
+
+### Optional Feature Requirements
+- WHERE performance is critical, the system SHOULD use dataclasses with slots=True
+- WHERE AWS services are needed in tests, the system SHOULD use LocalStack
+- WHERE complex validation is required, the system SHOULD use Pydantic v2
+- WHERE caching improves performance, the system SHOULD implement Redis caching
+
+### Complex Requirements
+- WHEN a Lambda function processes an SQS message AND the message is malformed, the system SHALL log the error with message context, move the message to DLQ, and continue processing other messages
+- WHEN an API request is received AND authentication is required, the system SHALL validate the JWT token, extract user context, add user ID to log context, and proceed with request processing
+- WHEN a background task fails AND retry attempts are exhausted, the system SHALL log the failure with full context, publish a failure event to SNS, and update task status in the database
+
+---
+
+## 11. Checklists
 
 **Why this checklist matters:** This checklist serves as a final verification that all critical practices are implemented. Each item represents a decision that significantly impacts code quality, maintainability, security, or performance. Regular checklist reviews during code reviews and before releases help ensure consistency across projects and prevent regression of important practices.
-
-- [ ] Python 3.13, uv lock committed
 - [ ] ruff + mypy strict pass
 - [ ] pytest coverage ≥ 90% domain
 - [ ] structlog JSON, OTEL traces
