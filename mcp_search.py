@@ -56,7 +56,7 @@ def search_docs(search_term: str, limit: int = 5) -> Any:
     MCP Protocol Implementation:
     1. initialize: Establishes protocol version and capabilities
     2. initialized: Notification that client is ready (no response expected)
-    3. tools/call: Invokes the search_documentation tool
+    3. tools/call: Invokes the pqsoft_search_docs tool
     
     Why stdio transport:
     - Standard MCP transport mechanism
@@ -119,7 +119,7 @@ def search_docs(search_term: str, limit: int = 5) -> Any:
             "id": 2,
             "method": "tools/call",
             "params": {
-                "name": "search_documentation",
+                "name": "pqsoft_search_docs",
                 "arguments": {
                     "search_phrase": search_term,
                     "limit": limit

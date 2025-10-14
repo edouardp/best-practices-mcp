@@ -10,7 +10,7 @@ A self-contained Model Context Protocol (MCP) server that provides semantic sear
 ├─────────────────────────────────────────────────────────────┤
 │  docs/*.md → build_index.py → embeddings → sdlc_docs.db    │
 │  • Chunks documents with heading context                    │
-│  • Generates 384-dim vectors (thenlper/gte-small)          │
+│  • Generates 768-dim vectors (all-mpnet-base-v2)           │
 │  • Stores in DuckDB with metadata                           │
 └─────────────────────────────────────────────────────────────┘
                               ↓
@@ -18,9 +18,9 @@ A self-contained Model Context Protocol (MCP) server that provides semantic sear
 │                    Runtime (Container)                       │
 ├─────────────────────────────────────────────────────────────┤
 │  server.py (FastMCP) ← stdio ← MCP Client (Q CLI)          │
-│  • search_documentation: Semantic vector search             │
-│  • read_documentation: Precise line-range reading           │
-│  • recommend: Content-based recommendations                 │
+│  • pqsoft_search_docs: Semantic vector search             │
+│  • pqsoft_read_docs: Precise line-range reading           │
+│  • pqsoft_recommend_docs: Content-based recommendations   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -45,7 +45,7 @@ A self-contained Model Context Protocol (MCP) server that provides semantic sear
 
 ## Tools Available
 
-### `search_documentation(search_phrase: str, limit: int) -> list[dict]`
+### `pqsoft_search_docs(search_phrase: str, limit: int) -> list[dict]`
 Semantic search across all documentation.
 
 **Returns:**
@@ -60,16 +60,16 @@ Semantic search across all documentation.
 }, ...]
 ```
 
-### `read_documentation(documentation_path: str, start_line: int, end_line: int) -> str`
+### `pqsoft_read_docs(documentation_path: str, start_line: int, end_line: int) -> str`
 Read specific line ranges from documentation files.
 
 **Example:**
 ```python
-read_documentation('04-testing-strategies.md', 1, 50)
+pqsoft_read_docs('04-testing-strategies.md', 1, 50)
 # Returns lines 1-50 from the file
 ```
 
-### `recommend(title: str) -> list[dict]`
+### `pqsoft_recommend_docs(title: str) -> list[dict]`
 Get related documentation based on content similarity.
 
 ## Quick Start
@@ -99,7 +99,7 @@ python3 test_read.py "04-testing-strategies.md" 1 50
 
 ### 3. Use with Q CLI
 
-Add to your MCP configuration (`~/.config/amazonq/mcp.json`):
+Add to your MCP configuration (`~/.aws/amazonq/mcp.json`):
 
 ```json
 {
@@ -158,7 +158,7 @@ Or for Podman:
 ├── build_index.py             # Indexing script (runs at build time)
 ├── server.py                  # MCP server (runs at runtime)
 ├── mcp_search.py              # Python MCP client for testing
-├── test_read.py               # Test script for read_documentation
+├── test_read.py               # Test script for pqsoft_read_docs
 ├── docs/                      # Your markdown documentation
 │   └── *.md
 ├── detect_container.sh        # Auto-detect Docker/Podman
@@ -177,9 +177,9 @@ All scripts automatically detect and use either Docker or Podman:
 ## Technical Details
 
 ### Embedding Model
-- **Model**: `thenlper/gte-small`
-- **Dimensions**: 384
-- **Why**: Good balance of quality vs. size/speed for CPU inference
+- **Model**: `sentence-transformers/all-mpnet-base-v2`
+- **Dimensions**: 768
+- **Why**: Higher quality embeddings for better semantic search results
 - **License**: Apache 2.0
 
 ### Database
@@ -218,7 +218,7 @@ model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 ### Modify Search Limit
 Default is 10 results, max 50. Adjust in tool call:
 ```python
-search_documentation("query", limit=20)
+pqsoft_search_docs("query", limit=20)
 ```
 
 ## Troubleshooting

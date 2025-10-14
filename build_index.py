@@ -22,8 +22,15 @@ import duckdb
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
+# Configuration constants
+CHUNK_SIZE = 150
+OVERLAP_LINES = 5
+EMBEDDING_DIM = 768
+EMBEDDING_MODEL = 'sentence-transformers/all-mpnet-base-v2'
+MIN_CHUNK_LENGTH = 50
 
-def chunk_text(text: str, chunk_size: int = 300, overlap_lines: int = 2) -> List[Dict]:
+
+def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap_lines: int = OVERLAP_LINES) -> List[Dict]:
     """
     Split markdown text into overlapping chunks with heading context.
     
@@ -155,9 +162,9 @@ def process_markdown_files() -> None:
     - filename: Relative path for read_documentation tool
     - start_line/end_line: Precise location tracking
     - content: Original text for display in search results
-    - embedding: 384-dimensional vector for semantic search
+    - embedding: 768-dimensional vector for semantic search
     
-    Why FLOAT[384]: thenlper/gte-small produces 384-dimensional embeddings
+    Why FLOAT[768]: all-mpnet-base-v2 produces 768-dimensional embeddings
     """
     docs_dir = Path("docs")
     
@@ -168,10 +175,10 @@ def process_markdown_files() -> None:
         create_sample_docs()
     
     # Load embedding model
-    # Why thenlper/gte-small: Good balance of quality vs size/speed for CPU inference
+    # Why all-mpnet-base-v2: Higher quality 768-dim embeddings for better search results
     # Why load once: Model loading is expensive, reuse for all documents
     print("Loading embedding model...")
-    model = SentenceTransformer('thenlper/gte-small')
+    model = SentenceTransformer(EMBEDDING_MODEL)
     
     # Initialize database
     # Why DuckDB: Embedded database with native vector support, no separate server needed
@@ -179,8 +186,8 @@ def process_markdown_files() -> None:
     
     # Create table with vector column
     # Why IF NOT EXISTS: Allows script to be re-run safely
-    # Why FLOAT[384]: Fixed-size array for efficient vector operations
-    conn.execute("""
+    # Why FLOAT[768]: Fixed-size array for efficient vector operations (768-dim embeddings)
+    conn.execute(f"""
         CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY,
             title TEXT,
@@ -188,7 +195,7 @@ def process_markdown_files() -> None:
             start_line INTEGER,
             end_line INTEGER,
             content TEXT,
-            embedding FLOAT[384]
+            embedding FLOAT[{EMBEDDING_DIM}]
         )
     """)
     
@@ -214,19 +221,19 @@ def process_markdown_files() -> None:
         title = md_file.stem.replace('_', ' ').replace('-', ' ').title()
         
         # Split document into chunks
-        chunks = chunk_text(content)
+        chunks = chunk_text(content, chunk_size=CHUNK_SIZE, overlap_lines=OVERLAP_LINES)
         
         for chunk_info in chunks:
             chunk_text_content = chunk_info['text']
             
             # Skip very short chunks (likely just headings or whitespace)
             # Why 50 chars: Arbitrary threshold, too short to be meaningful
-            if len(chunk_text_content.strip()) < 50:
+            if len(chunk_text_content.strip()) < MIN_CHUNK_LENGTH:
                 continue
             
             # Generate embedding for this chunk
             # Why encode each chunk: Provides more precise search than whole-document embeddings
-            # Returns numpy array of shape (384,)
+            # Returns numpy array of shape (768,)
             embedding = model.encode(chunk_text_content)
             
             # Insert into database

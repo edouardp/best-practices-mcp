@@ -27,6 +27,10 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from fastmcp import FastMCP
 
+# Configuration constants (must match build_index.py)
+EMBEDDING_MODEL = 'sentence-transformers/all-mpnet-base-v2'
+MAX_SEARCH_LIMIT = 50
+
 
 # Initialize MCP server
 # Why "SDLC Docs Server": Descriptive name shown to MCP clients
@@ -36,7 +40,7 @@ mcp = FastMCP("SDLC Docs Server")
 # Why global: Model loading is expensive, share across all requests
 # Why same model as build: Ensures query embeddings match document embeddings
 print("Loading embedding model...", file=sys.stderr)
-model = SentenceTransformer('thenlper/gte-small')
+model = SentenceTransformer(EMBEDDING_MODEL)
 
 # Connect to database in read-only mode
 # Why read-only: Prevents accidental modifications, enables safe concurrent access
@@ -45,7 +49,7 @@ conn = duckdb.connect('sdlc_docs.db', read_only=True)
 
 
 @mcp.tool()
-def search_documentation(search_phrase: str, limit: int = 10) -> List[Dict]:
+def pqsoft_search_docs(search_phrase: str, limit: int = 10) -> List[Dict]:
     """
     Search SDLC documentation using semantic similarity.
     
@@ -72,7 +76,7 @@ def search_documentation(search_phrase: str, limit: int = 10) -> List[Dict]:
     
     Args:
         search_phrase: Natural language query (e.g., "how to write unit tests")
-        limit: Maximum results to return (capped at 50 for performance)
+        limit: Maximum results to return (capped at MAX_SEARCH_LIMIT for performance)
     
     Returns:
         List of dicts with keys: rank_order, title, filename, start_line, 
@@ -85,7 +89,7 @@ def search_documentation(search_phrase: str, limit: int = 10) -> List[Dict]:
     """
     # Validate and clamp limit
     # Why clamp: Prevents excessive memory usage and slow responses
-    if not 1 <= limit <= 50:
+    if not 1 <= limit <= MAX_SEARCH_LIMIT:
         limit = 10
     
     # Generate embedding for search query
@@ -103,7 +107,7 @@ def search_documentation(search_phrase: str, limit: int = 10) -> List[Dict]:
             start_line,
             end_line,
             content,
-            array_cosine_similarity(embedding, ?::FLOAT[384]) as similarity
+            array_cosine_similarity(embedding, ?::FLOAT[768]) as similarity
         FROM documents
         ORDER BY similarity DESC
         LIMIT ?
@@ -119,7 +123,7 @@ def search_documentation(search_phrase: str, limit: int = 10) -> List[Dict]:
             'filename': filename,
             'start_line': start_line,
             'end_line': end_line,
-            'content': content[:200] + "..." if len(content) > 200 else content,
+            'content': content[:400] + "..." if len(content) > 400 else content,
             'similarity': float(similarity)
         })
     
@@ -127,12 +131,12 @@ def search_documentation(search_phrase: str, limit: int = 10) -> List[Dict]:
 
 
 @mcp.tool()
-def read_documentation(documentation_path: str, start_line: int, end_line: int) -> str:
+def pqsoft_read_docs(documentation_path: str, start_line: int, end_line: int) -> str:
     """
     Read specific line range from a documentation file.
     
     Why this tool exists:
-    - search_documentation returns snippets, this gets full content
+    - pqsoft_search_docs returns snippets, this gets full content
     - Enables precise reading of relevant sections
     - Complements search by providing complete context
     
@@ -206,7 +210,7 @@ def read_documentation(documentation_path: str, start_line: int, end_line: int) 
 
 
 @mcp.tool()
-def recommend(title: str) -> List[Dict]:
+def pqsoft_recommend_docs(title: str) -> List[Dict]:
     """
     Get related documentation based on content similarity.
     
@@ -257,7 +261,7 @@ def recommend(title: str) -> List[Dict]:
         SELECT DISTINCT 
             title,
             content,
-            array_cosine_similarity(embedding, ?::FLOAT[384]) as similarity
+            array_cosine_similarity(embedding, ?::FLOAT[768]) as similarity
         FROM documents 
         WHERE title NOT LIKE ?
         ORDER BY similarity DESC

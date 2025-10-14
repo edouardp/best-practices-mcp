@@ -46,7 +46,7 @@ def read_docs(documentation_path, start_line, end_line):
             "id": 2,
             "method": "tools/call",
             "params": {
-                "name": "read_documentation",
+                "name": "pqsoft_read_docs",
                 "arguments": {
                     "documentation_path": documentation_path,
                     "start_line": start_line,
@@ -75,7 +75,7 @@ def read_docs(documentation_path, start_line, end_line):
                 if 'result' in response:
                     content = response['result'].get('content', [])
                     if content and 'text' in content[0]:
-                        # read_documentation returns a string, not JSON
+                        # pqsoft_read_docs returns a string, not JSON
                         return content[0]['text']
                     else:
                         return "No content in response"
