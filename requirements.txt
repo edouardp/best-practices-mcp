@@ -1,0 +1,4 @@
+fastmcp
+sentence-transformers
+duckdb
+numpy

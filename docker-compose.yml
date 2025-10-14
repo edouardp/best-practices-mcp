@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  sdlc-mcp:
+    build: .
+    container_name: sdlc-mcp-server
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./docs:/app/docs:ro
