@@ -9,14 +9,113 @@
 ### Register everything via built-in DI; no service locators
 **Why:** Service locators create hidden dependencies that make code harder to test and understand. The built-in DI container forces explicit dependency declaration, making your code more maintainable and testable. It also eliminates the need for additional dependencies and reduces complexity.
 
+```csharp
+// ❌ Bad - Service locator pattern
+public class OrderService
+{
+    public void ProcessOrder(Order order)
+    {
+        var emailService = ServiceLocator.Get<IEmailService>(); // Hidden dependency
+        var paymentService = ServiceLocator.Get<IPaymentService>();
+    }
+}
+
+// ✅ Good - Explicit dependencies via constructor injection
+public class OrderService
+{
+    private readonly IEmailService _emailService;
+    private readonly IPaymentService _paymentService;
+    
+    public OrderService(IEmailService emailService, IPaymentService paymentService)
+    {
+        _emailService = emailService;
+        _paymentService = paymentService;
+    }
+}
+```
+
 ### No keyed services — use explicit interfaces and factories
 **Why:** Keyed services create magic strings that can break at runtime and make dependencies unclear. Explicit interfaces and factories make your intent obvious, provide compile-time safety, and make it easier to understand what implementations are available. Factories also give you more control over object creation lifecycle.
+
+```csharp
+// ❌ Bad - Keyed services with magic strings
+services.AddKeyedScoped<INotificationService, EmailNotificationService>("email");
+services.AddKeyedScoped<INotificationService, SmsNotificationService>("sms");
+
+public class OrderService([FromKeyedServices("email")] INotificationService emailService) { }
+
+// ✅ Good - Explicit interfaces and factory
+public interface INotificationServiceFactory
+{
+    INotificationService Create(NotificationType type);
+}
+
+public class NotificationServiceFactory : INotificationServiceFactory
+{
+    public INotificationService Create(NotificationType type) => type switch
+    {
+        NotificationType.Email => new EmailNotificationService(),
+        NotificationType.Sms => new SmsNotificationService(),
+        _ => throw new ArgumentException($"Unknown notification type: {type}")
+    };
+}
+```
 
 ### Records for pure data; interfaces for behaviors. Immutability by default
 **Why:** Records provide value equality, immutability, and concise syntax for data transfer objects. Interfaces for behaviors enable testability through mocking and allow for multiple implementations. Immutability prevents accidental state changes that can cause bugs in concurrent scenarios.
 
 ### Replace DateTime.UtcNow with TimeProvider; test with FakeTimeProvider
 **Why:** DateTime.UtcNow creates a hidden dependency on system time, making time-dependent code impossible to test reliably. TimeProvider allows you to control time in tests, making them deterministic and fast. This is crucial for testing timeouts, scheduling, and time-based business logic.
+
+```csharp
+// ❌ Bad - Direct DateTime usage
+public class OrderService
+{
+    public Order CreateOrder(OrderRequest request)
+    {
+        return new Order
+        {
+            CreatedAt = DateTime.UtcNow, // Hard to test
+            ExpiresAt = DateTime.UtcNow.AddHours(24)
+        };
+    }
+}
+
+// ✅ Good - TimeProvider injection
+public class OrderService
+{
+    private readonly TimeProvider _timeProvider;
+    
+    public OrderService(TimeProvider timeProvider)
+    {
+        _timeProvider = timeProvider;
+    }
+    
+    public Order CreateOrder(OrderRequest request)
+    {
+        var now = _timeProvider.GetUtcNow();
+        return new Order
+        {
+            CreatedAt = now,
+            ExpiresAt = now.AddHours(24)
+        };
+    }
+}
+
+// Test with FakeTimeProvider
+[Test]
+public void CreateOrder_SetsCorrectTimestamps()
+{
+    var fakeTime = new DateTimeOffset(2024, 1, 1, 12, 0, 0, TimeSpan.Zero);
+    var timeProvider = new FakeTimeProvider(fakeTime);
+    var service = new OrderService(timeProvider);
+    
+    var order = service.CreateOrder(new OrderRequest());
+    
+    order.CreatedAt.Should().Be(fakeTime);
+    order.ExpiresAt.Should().Be(fakeTime.AddHours(24));
+}
+```
 
 ### Warnings-as-errors; analyzers on; zero warnings in CI
 **Why:** Warnings often indicate potential bugs or code quality issues. Treating them as errors prevents technical debt accumulation and forces developers to address issues immediately. Analyzers catch common mistakes and enforce consistent coding standards across the team.
@@ -36,6 +135,45 @@
 
 ### Config via IOptions<T> + .ValidateDataAnnotations().ValidateOnStart()
 **Why:** IOptions provides strongly-typed configuration with change notification support. Data annotations validation catches configuration errors at startup rather than at runtime, preventing production failures. ValidateOnStart ensures configuration is valid before your application starts accepting requests, following the "fail fast" principle.
+
+```csharp
+// Configuration class with validation
+public class DatabaseOptions
+{
+    [Required]
+    [MinLength(1)]
+    public string ConnectionString { get; set; } = string.Empty;
+    
+    [Range(1, 300)]
+    public int CommandTimeoutSeconds { get; set; } = 30;
+    
+    [Range(1, 100)]
+    public int MaxPoolSize { get; set; } = 10;
+}
+
+// Registration in Program.cs
+builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection("Database"));
+builder.Services.AddOptions<DatabaseOptions>()
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+// Usage in service
+public class OrderRepository
+{
+    private readonly DatabaseOptions _options;
+    
+    public OrderRepository(IOptions<DatabaseOptions> options)
+    {
+        _options = options.Value;
+    }
+    
+    public async Task<Order> GetOrderAsync(int id)
+    {
+        using var connection = new MySqlConnection(_options.ConnectionString);
+        // Use _options.CommandTimeoutSeconds, etc.
+    }
+}
+```
 
 ### Logging: ILogger<T> + Serilog (JSON to stdout)
 **Why:** ILogger<T> provides structured logging with category-based filtering and is the .NET standard. Serilog offers rich structured logging capabilities with excellent performance. JSON output to stdout integrates seamlessly with container orchestration platforms and log aggregation systems like CloudWatch or ELK stack.
@@ -59,6 +197,51 @@
 ### HttpClientFactory + Polly v8: timeouts, retry, circuit breaker, bulkhead
 **Why:** HttpClientFactory manages HttpClient lifecycle properly, preventing socket exhaustion and DNS issues. Polly provides battle-tested resilience patterns that handle transient failures gracefully. Timeouts prevent hanging requests, retries handle temporary failures, circuit breakers prevent cascading failures, and bulkheads isolate failures to specific resources.
 
+```csharp
+// Registration in Program.cs
+builder.Services.AddHttpClient<PaymentApiClient>(client =>
+{
+    client.BaseAddress = new Uri("https://api.payment-provider.com");
+    client.Timeout = TimeSpan.FromSeconds(30);
+})
+.AddResilienceHandler("payment-api", builder =>
+{
+    builder
+        .AddTimeout(TimeSpan.FromSeconds(10))
+        .AddRetry(new RetryStrategyOptions
+        {
+            MaxRetryAttempts = 3,
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = true
+        })
+        .AddCircuitBreaker(new CircuitBreakerStrategyOptions
+        {
+            FailureRatio = 0.5,
+            SamplingDuration = TimeSpan.FromSeconds(30),
+            MinimumThroughput = 10,
+            BreakDuration = TimeSpan.FromSeconds(30)
+        });
+});
+
+// Usage in service
+public class PaymentApiClient
+{
+    private readonly HttpClient _httpClient;
+    
+    public PaymentApiClient(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+    
+    public async Task<PaymentResult> ProcessPaymentAsync(PaymentRequest request, CancellationToken cancellationToken)
+    {
+        var response = await _httpClient.PostAsJsonAsync("/payments", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PaymentResult>(cancellationToken);
+    }
+}
+```
+
 ### Pass CancellationToken everywhere; async end-to-end; never .Result/.Wait()
 **Why:** CancellationTokens allow graceful cancellation of operations when clients disconnect or timeouts occur, preventing wasted resources. Async end-to-end prevents thread pool starvation and improves scalability. Blocking on async operations with .Result/.Wait() can cause deadlocks and reduces performance.
 
@@ -72,6 +255,44 @@
 ### Dapper: parameterized queries only; command timeouts; prepared statements on hot paths
 **Why:** Parameterized queries prevent SQL injection attacks, which are among the most common security vulnerabilities. Command timeouts prevent long-running queries from blocking resources indefinitely. Prepared statements on hot paths improve performance by allowing the database to cache query execution plans.
 
+```csharp
+public class OrderRepository
+{
+    private readonly string _connectionString;
+    
+    public async Task<Order?> GetOrderAsync(int orderId, CancellationToken cancellationToken)
+    {
+        using var connection = new MySqlConnection(_connectionString);
+        
+        // ✅ Good - Parameterized query with timeout
+        const string sql = "SELECT * FROM orders WHERE id = @orderId";
+        var command = new CommandDefinition(
+            sql, 
+            new { orderId }, 
+            commandTimeout: 30,
+            cancellationToken: cancellationToken);
+            
+        return await connection.QuerySingleOrDefaultAsync<Order>(command);
+    }
+    
+    // For hot paths - prepare statements
+    private static readonly CommandDefinition GetOrderByIdCommand = new(
+        "SELECT * FROM orders WHERE id = @orderId",
+        commandTimeout: 30,
+        flags: CommandFlags.None);
+    
+    public async Task<Order?> GetOrderFastAsync(int orderId)
+    {
+        using var connection = new MySqlConnection(_connectionString);
+        return await connection.QuerySingleOrDefaultAsync<Order>(
+            GetOrderByIdCommand with { Parameters = new { orderId } });
+    }
+}
+
+// ❌ Bad - String concatenation (SQL injection risk)
+// var sql = $"SELECT * FROM orders WHERE id = {orderId}";
+```
+
 ### DbUp: transactional migrations, schema version table, checksum verification, exclusive lock
 **Why:** Transactional migrations ensure database schema changes are atomic - they either complete fully or roll back completely. Schema version tracking prevents applying migrations out of order or multiple times. Checksum verification detects if migration scripts have been modified after deployment. Exclusive locks prevent concurrent migration runs that could corrupt the database.
 
@@ -84,6 +305,51 @@
 
 ### xUnit + AwesomeAssertions; AAA; Given_When_Should names
 **Why:** xUnit is the most popular .NET testing framework with excellent performance and extensibility. AwesomeAssertions provides more readable and informative assertion failures compared to FluentAssertions. AAA (Arrange, Act, Assert) structure makes tests easier to understand and maintain. Given_When_Should naming clearly communicates test scenarios and expected outcomes.
+
+```csharp
+public class OrderServiceTests
+{
+    [Test]
+    public async Task Given_ValidOrder_When_ProcessingOrder_Should_CreateOrderSuccessfully()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2024, 1, 1, 12, 0, 0, TimeSpan.Zero));
+        var mockPaymentService = new Mock<IPaymentService>();
+        var service = new OrderService(mockPaymentService.Object, timeProvider);
+        
+        var request = new OrderRequest
+        {
+            CustomerId = 123,
+            Items = [new OrderItem { ProductId = 1, Quantity = 2 }]
+        };
+        
+        // Act
+        var result = await service.CreateOrderAsync(request);
+        
+        // Assert
+        result.Should().NotBeNull();
+        result.CustomerId.Should().Be(123);
+        result.CreatedAt.Should().Be(timeProvider.GetUtcNow());
+        result.Items.Should().HaveCount(1);
+        
+        mockPaymentService.Verify(x => x.ProcessPaymentAsync(It.IsAny<Payment>()), Times.Once);
+    }
+    
+    [Test]
+    public async Task Given_InvalidCustomerId_When_ProcessingOrder_Should_ThrowValidationException()
+    {
+        // Arrange
+        var service = new OrderService(Mock.Of<IPaymentService>(), TimeProvider.System);
+        var request = new OrderRequest { CustomerId = 0 }; // Invalid
+        
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<ValidationException>(() => 
+            service.CreateOrderAsync(request));
+            
+        exception.Message.Should().Contain("CustomerId must be greater than 0");
+    }
+}
+```
 
 ### Reqnroll for BDD specs
 **Why:** Reqnroll (successor to SpecFlow) enables behavior-driven development by allowing you to write tests in natural language that stakeholders can understand. This bridges the gap between business requirements and technical implementation, ensuring you're building the right features.
@@ -107,11 +373,82 @@
 ### Simple: inject Func<T>
 **Why:** Func<T> delegates provide a clean way to defer object creation until needed, which is useful for expensive objects or when you need multiple instances. This is simpler and more explicit than keyed services while maintaining compile-time safety.
 
+```csharp
+// Registration
+services.AddScoped<ExpensiveService>();
+services.AddScoped<Func<ExpensiveService>>(provider => 
+    () => provider.GetRequiredService<ExpensiveService>());
+
+// Usage - create only when needed
+public class OrderProcessor
+{
+    private readonly Func<ExpensiveService> _expensiveServiceFactory;
+    
+    public OrderProcessor(Func<ExpensiveService> expensiveServiceFactory)
+    {
+        _expensiveServiceFactory = expensiveServiceFactory;
+    }
+    
+    public async Task ProcessOrderAsync(Order order)
+    {
+        if (order.RequiresExpensiveProcessing)
+        {
+            var service = _expensiveServiceFactory(); // Create only when needed
+            await service.ProcessAsync(order);
+        }
+    }
+}
+```
+
 ### Parameterized: Func<TParam, TResult> delegates
 **Why:** When you need to create objects with runtime parameters, parameterized delegates make the dependency explicit and testable. This is cleaner than passing parameters through the DI container and provides better type safety.
 
 ### Strategy: IFactory<Enum, IService> returning concrete implementations
 **Why:** Factory patterns with explicit enums make it clear what implementations are available and provide compile-time safety. Using explicit switch statements instead of keyed services makes the mapping obvious and prevents runtime errors from typos in magic strings.
+
+```csharp
+public enum PaymentProvider
+{
+    Stripe,
+    PayPal,
+    Square
+}
+
+public interface IPaymentServiceFactory
+{
+    IPaymentService Create(PaymentProvider provider);
+}
+
+public class PaymentServiceFactory : IPaymentServiceFactory
+{
+    private readonly IServiceProvider _serviceProvider;
+    
+    public PaymentServiceFactory(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
+    }
+    
+    public IPaymentService Create(PaymentProvider provider) => provider switch
+    {
+        PaymentProvider.Stripe => _serviceProvider.GetRequiredService<StripePaymentService>(),
+        PaymentProvider.PayPal => _serviceProvider.GetRequiredService<PayPalPaymentService>(),
+        PaymentProvider.Square => _serviceProvider.GetRequiredService<SquarePaymentService>(),
+        _ => throw new ArgumentException($"Unknown payment provider: {provider}")
+    };
+}
+
+// Usage
+public class OrderService
+{
+    private readonly IPaymentServiceFactory _paymentFactory;
+    
+    public async Task ProcessPaymentAsync(Order order)
+    {
+        var paymentService = _paymentFactory.Create(order.PaymentProvider);
+        await paymentService.ProcessAsync(order.Payment);
+    }
+}
+```
 
 ### Use ActivatorUtilities.CreateInstance<T> for DI + runtime args
 **Why:** When you need both dependency injection and runtime parameters, ActivatorUtilities provides a clean way to create instances that satisfy both needs. This is more explicit and testable than complex factory patterns or service locators.
@@ -122,6 +459,43 @@
 
 ### System.Text.Json with source generators (JsonSerializerContext)
 **Why:** System.Text.Json is faster and more memory-efficient than Newtonsoft.Json, and it's the .NET standard. Source generators provide compile-time serialization code generation, eliminating reflection overhead and enabling trimming/AOT scenarios. This results in better performance and smaller deployment sizes.
+
+```csharp
+// Define serialization context
+[JsonSerializable(typeof(Order))]
+[JsonSerializable(typeof(OrderRequest))]
+[JsonSerializable(typeof(List<Order>))]
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    WriteIndented = false)]
+public partial class OrderJsonContext : JsonSerializerContext
+{
+}
+
+// Usage in API controller
+[ApiController]
+[Route("api/v1/orders")]
+public class OrdersController : ControllerBase
+{
+    [HttpPost]
+    public async Task<IActionResult> CreateOrder([FromBody] OrderRequest request)
+    {
+        // Deserialize with source-generated context
+        var order = JsonSerializer.Deserialize(request, OrderJsonContext.Default.OrderRequest);
+        
+        // Process order...
+        
+        // Serialize response with source-generated context
+        return Ok(JsonSerializer.Serialize(order, OrderJsonContext.Default.Order));
+    }
+}
+
+// Configure in Program.cs
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, OrderJsonContext.Default);
+});
+```
 
 ### Avoid Newtonsoft.Json in new code
 **Why:** Newtonsoft.Json is slower, uses more memory, and relies heavily on reflection. System.Text.Json is actively developed by Microsoft and integrates better with modern .NET features like trimming and AOT compilation.
@@ -135,6 +509,55 @@
 
 ### /health/live and /health/ready with dependency checks
 **Why:** Separate liveness and readiness probes allow orchestrators to make better decisions about your application. Liveness checks determine if the application should be restarted, while readiness checks determine if it should receive traffic. Dependency checks ensure your service only reports as ready when it can actually fulfill requests.
+
+```csharp
+// Program.cs
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy())
+    .AddMySql(connectionString, name: "database")
+    .AddCheck<S3HealthCheck>("s3-bucket")
+    .AddCheck<DownstreamApiHealthCheck>("payment-api");
+
+var app = builder.Build();
+
+// Separate endpoints for different purposes
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Name == "self" // Only basic liveness
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = _ => true, // All health checks for readiness
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+});
+
+// Custom health check example
+public class S3HealthCheck : IHealthCheck
+{
+    private readonly IAmazonS3 _s3Client;
+    private readonly string _bucketName;
+    
+    public S3HealthCheck(IAmazonS3 s3Client, IConfiguration config)
+    {
+        _s3Client = s3Client;
+        _bucketName = config["S3:BucketName"];
+    }
+    
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _s3Client.GetBucketLocationAsync(_bucketName, cancellationToken);
+            return HealthCheckResult.Healthy("S3 bucket is accessible");
+        }
+        catch (Exception ex)
+        {
+            return HealthCheckResult.Unhealthy("S3 bucket is not accessible", ex);
+        }
+    }
+}
+```
 
 ### ECS healthchecks point to /health/ready
 **Why:** Using readiness checks for load balancer health ensures traffic is only routed to instances that can actually process requests. This prevents cascading failures when dependencies are unavailable and provides better user experience during deployments or scaling events.
@@ -177,6 +600,39 @@
 
 ### Multi-stage Dockerfile; run as non-root; read-only FS; /app workdir
 **Why:** Multi-stage builds separate build dependencies from runtime dependencies, creating smaller, more secure final images. Running as non-root follows the principle of least privilege and prevents many attack vectors. Read-only filesystems prevent runtime modifications that could indicate compromise. Consistent workdir simplifies deployment and debugging.
+
+```dockerfile
+# Multi-stage Dockerfile example
+FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
+WORKDIR /src
+COPY ["MyApi/MyApi.csproj", "MyApi/"]
+RUN dotnet restore "MyApi/MyApi.csproj"
+COPY . .
+WORKDIR "/src/MyApi"
+RUN dotnet publish "MyApi.csproj" -c Release -o /app/publish \
+    --no-restore --runtime linux-arm64 --self-contained false
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
+# Create non-root user
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup
+
+WORKDIR /app
+COPY --from=build /app/publish .
+
+# Set ownership and switch to non-root user
+RUN chown -R appuser:appgroup /app
+USER appuser
+
+# Read-only filesystem (mount tmpfs for writable areas if needed)
+# docker run --read-only --tmpfs /tmp myapi
+
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health/ready || exit 1
+
+ENTRYPOINT ["dotnet", "MyApi.dll"]
+```
 
 ### Healthcheck to /health/ready
 **Why:** Container healthchecks allow orchestrators to automatically restart unhealthy containers and route traffic appropriately. Using the readiness endpoint ensures containers are marked healthy only when they can actually serve requests, improving overall system reliability.
