@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y \
 # Copy project files
 COPY pyproject.toml uv.lock ./
 
-# Install uv and create virtual environment
+# Install uv and create virtual environment (production only)
 RUN pip install uv && \
-    uv sync --frozen
+    uv sync --frozen --no-dev
 
 # Pre-download embedding model to cache
 RUN .venv/bin/python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-mpnet-base-v2')"
