@@ -1,5 +1,5 @@
 [project]
-name = "sdlc-mcp"
+name = "best-practices-mcp"
 version = "0.1.0"
 description = "SDLC Best Practices MCP Server"
 requires-python = ">=3.13"
@@ -11,8 +11,8 @@ dependencies = [
 ]
 
 [project.scripts]
-sdlc-mcp-server = "sdlc_mcp.server:main"
-sdlc-mcp-build = "sdlc_mcp.build_index:main"
+best-practices-mcp-server = "sdlc_mcp.server:main"
+best-practices-mcp-build = "sdlc_mcp.build_index:main"
 
 [dependency-groups]
 dev = [

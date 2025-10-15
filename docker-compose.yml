@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  sdlc-mcp:
+  best-practices-mcp:
     build: .
-    container_name: sdlc-mcp-server
+    container_name: best-practices-mcp-server
     stdin_open: true
     tty: true
     volumes:

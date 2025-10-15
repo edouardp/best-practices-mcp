@@ -226,19 +226,19 @@ pqsoft_search_docs("query", limit=20)
 ### Container won't start
 ```bash
 # Check if image built successfully
-docker images | grep sdlc-mcp
+docker images | grep best-practices-mcp
 
 # View build logs
-docker build -t sdlc-mcp . 2>&1 | less
+docker build -t best-practices-mcp . 2>&1 | less
 ```
 
 ### Search returns no results
 ```bash
 # Verify database was created
-docker run --rm sdlc-mcp ls -lh sdlc_docs.db
+docker run --rm best-practices-mcp ls -lh sdlc_docs.db
 
 # Check number of indexed chunks
-docker run --rm sdlc-mcp python -c "import duckdb; print(duckdb.connect('sdlc_docs.db').execute('SELECT COUNT(*) FROM documents').fetchone())"
+docker run --rm best-practices-mcp python -c "import duckdb; print(duckdb.connect('sdlc_docs.db').execute('SELECT COUNT(*) FROM documents').fetchone())"
 ```
 
 ### Path traversal errors

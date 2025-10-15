@@ -80,7 +80,7 @@ def search_docs(search_term: str, limit: int = 5) -> Any:
     # Why -i flag: Interactive mode, keeps stdin open
     # Why text=True: Handle strings instead of bytes
     process = subprocess.Popen(
-        [container_cmd, "run", "-i", "sdlc-mcp"],
+        [container_cmd, "run", "-i", "best-practices-mcp"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

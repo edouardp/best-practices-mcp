@@ -14,7 +14,7 @@ echo "=== Proof of Concept Test ==="
 
 # Test that server starts and responds to initialize
 echo "Testing MCP server startup and initialize..."
-RESULT=$(echo '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}}' | $CONTAINER_CMD run -i sdlc-mcp 2>/dev/null | grep -E '^\{.*\}$')
+RESULT=$(echo '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}}' | $CONTAINER_CMD run -i best-practices-mcp 2>/dev/null | grep -E '^\{.*\}$')
 
 if echo "$RESULT" | grep -q '"SDLC Docs Server"'; then
     echo "✓ MCP server responds correctly"
@@ -29,7 +29,7 @@ fi
 
 # Test that container builds and runs without errors
 echo -e "\nTesting container health..."
-if $CONTAINER_CMD run --rm sdlc-mcp python -c "import server; print('✓ Server imports successfully')" 2>/dev/null; then
+if $CONTAINER_CMD run --rm best-practices-mcp python -c "import server; print('✓ Server imports successfully')" 2>/dev/null; then
     echo "✓ All Python dependencies available"
     echo "✓ Server code loads without errors"
 else
