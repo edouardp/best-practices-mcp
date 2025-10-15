@@ -1,4 +1,4 @@
-# Multi-stage build following security best practices
+# Multi-stage Dockerfile following security best practices
 FROM python:3.13-slim AS build
 
 WORKDIR /src
@@ -8,25 +8,22 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project files
+# Copy project configuration
 COPY pyproject.toml uv.lock ./
 
-# Install uv and create virtual environment
+# Install uv and dependencies
 RUN pip install uv && \
-    uv sync --frozen
+    uv sync --frozen --no-dev
 
-# Pre-download embedding model to cache
-RUN .venv/bin/python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-mpnet-base-v2')"
-
-# Copy source and docs
+# Copy source code and docs
 COPY src/ src/
 COPY docs/ docs/
 
-# Build embeddings database
+# Set Python path and build embeddings
 ENV PYTHONPATH=/src/src
 RUN .venv/bin/python -m sdlc_mcp.build_index
 
-# Runtime stage - minimal image
+# Runtime stage
 FROM python:3.13-slim AS runtime
 
 # Create non-root user
@@ -35,23 +32,23 @@ RUN groupadd -g 1001 appgroup && \
 
 WORKDIR /app
 
-# Copy only runtime artifacts
+# Copy virtual environment and built artifacts from build stage
 COPY --from=build /src/.venv /app/.venv
 COPY --from=build /src/src /app/src
+COPY --from=build /src/docs /app/docs
 COPY --from=build /src/sdlc_docs.db /app/sdlc_docs.db
-COPY --from=build /root/.cache/huggingface /home/appuser/.cache/huggingface
 
-# Set ownership and switch to non-root
-RUN chown -R appuser:appgroup /app /home/appuser/.cache
+# Set ownership and switch to non-root user
+RUN chown -R appuser:appgroup /app
 USER appuser
 
-# Environment setup
+# Set environment
 ENV PYTHONPATH=/app/src
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Health check
+# Healthcheck
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)"
 
-# Run MCP server
+# Run the MCP server
 CMD ["python", "-m", "sdlc_mcp.server"]
