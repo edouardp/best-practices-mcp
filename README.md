@@ -72,7 +72,7 @@ pqsoft_read_docs('04-testing-strategies.md', 1, 50)
 ### `pqsoft_recommend_docs(title: str) -> list[dict]`
 Get related documentation based on content similarity.
 
-## Quick Start
+## Development & Testing
 
 ### 1. Build and Test
 
@@ -81,9 +81,9 @@ Get related documentation based on content similarity.
 ./proof_test.sh
 
 # Or build manually
-docker build -t sdlc-mcp .
+docker build -t best-practices-mcp .
 # OR
-podman build -t sdlc-mcp .
+podman build -t best-practices-mcp .
 ```
 
 ### 2. Test Search Functionality
@@ -106,7 +106,7 @@ Add to your MCP configuration (`~/.aws/amazonq/mcp.json`):
   "mcpServers": {
     "sdlc-docs": {
       "command": "docker",
-      "args": ["run", "-i", "sdlc-mcp"]
+      "args": ["run", "--read-only", "-i", "best-practices-mcp"]
     }
   }
 }
@@ -118,7 +118,7 @@ Or for Podman:
   "mcpServers": {
     "sdlc-docs": {
       "command": "podman",
-      "args": ["run", "-i", "sdlc-mcp"]
+      "args": ["run", "--read-only", "-i", "best-practices-mcp"]
     }
   }
 }
