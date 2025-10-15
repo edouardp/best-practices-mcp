@@ -35,14 +35,13 @@ RUN groupadd -g 1001 appgroup && \
 
 WORKDIR /app
 
-# Copy only runtime artifacts
-COPY --from=build /src/.venv /app/.venv
-COPY --from=build /src/src /app/src
-COPY --from=build /src/sdlc_docs.db /app/sdlc_docs.db
-COPY --from=build /root/.cache/huggingface /home/appuser/.cache/huggingface
+# Copy only runtime artifacts with correct ownership
+COPY --from=build --chown=appuser:appgroup /src/.venv /app/.venv
+COPY --from=build --chown=appuser:appgroup /src/src /app/src
+COPY --from=build --chown=appuser:appgroup /src/sdlc_docs.db /app/sdlc_docs.db
+COPY --from=build --chown=appuser:appgroup /root/.cache/huggingface /home/appuser/.cache/huggingface
 
-# Set ownership and switch to non-root
-RUN chown -R appuser:appgroup /app /home/appuser/.cache
+# Switch to non-root user
 USER appuser
 
 # Environment setup
