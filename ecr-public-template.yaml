@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Public ECR repository with corporate VPN IP restrictions'
+
+Parameters:
+  CorporateIPRanges:
+    Type: CommaDelimitedList
+    Description: Corporate VPN IP ranges (CIDR format, e.g., 203.0.113.0/24,198.51.100.0/24)
+    Default: "203.0.113.0/24"
+
+Resources:
+  BestPracticesMCPPublicRepository:
+    Type: AWS::ECR::PublicRepository
+    Properties:
+      RepositoryName: best-practices-mcp
+      RepositoryCatalogData:
+        RepositoryDescription: "SDLC Best Practices MCP Server"
+        UsageText: "Corporate use only - VPN access required"
+        AboutText: "Internal documentation search server"
+        Architectures:
+          - x86-64
+        OperatingSystems:
+          - Linux
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCorporateVPNAccess
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - ecr-public:GetDownloadUrlForLayer
+              - ecr-public:BatchGetImage
+              - ecr-public:BatchCheckLayerAvailability
+            Condition:
+              IpAddress:
+                aws:SourceIp: !Ref CorporateIPRanges
+
+Outputs:
+  RepositoryURI:
+    Description: Public ECR Repository URI
+    Value: !GetAtt BestPracticesMCPPublicRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicRepositoryURI'

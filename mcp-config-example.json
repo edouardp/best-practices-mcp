@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sdlc-docs": {
+      "command": "docker",
+      "args": ["run", "--pull=always", "--read-only", "-i", "public.ecr.aws/your-alias/best-practices-mcp:latest"]
+    }
+  }
+}

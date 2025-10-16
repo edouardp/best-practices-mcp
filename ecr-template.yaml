@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ECR repository for best-practices-mcp with organization-wide access'
+
+Parameters:
+  OrganizationId:
+    Type: String
+    Description: AWS Organization ID (e.g., o-xxxxxxxxxx)
+    AllowedPattern: '^o-[a-z0-9]{10}$'
+
+Resources:
+  BestPracticesMCPRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: best-practices-mcp
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      RepositoryPolicyText:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowOrganizationAccess
+            Effect: Allow
+            Principal: '*'
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
+            Condition:
+              ForAnyValue:StringEquals:
+                aws:PrincipalOrgID: !Ref OrganizationId
+
+Outputs:
+  RepositoryURI:
+    Description: ECR Repository URI
+    Value: !GetAtt BestPracticesMCPRepository.RepositoryUri
+    Export:
+      Name: !Sub '${AWS::StackName}-RepositoryURI'
+  
+  RepositoryArn:
+    Description: ECR Repository ARN
+    Value: !GetAtt BestPracticesMCPRepository.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RepositoryArn'
