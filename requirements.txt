@@ -1,4 +1,5 @@
 fastmcp
-sentence-transformers
+transformers
+torch
 duckdb
 numpy

@@ -33,6 +33,7 @@ MIN_CHUNK_LENGTH = 50
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap_lines: int = OVERLAP_LINES) -> List[Dict]:
     """
     Split markdown text into overlapping chunks with heading context.
+    Preserves code blocks by never splitting them across chunks.
     
     Why chunking is necessary:
     - Embedding models have token limits (typically 512 tokens)
@@ -43,6 +44,11 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap_lines: int = OVE
     - Provides semantic context for each chunk
     - Improves embedding quality by including document structure
     - Helps users understand where content comes from
+    
+    Why we preserve code blocks:
+    - Maintains syntax highlighting and readability
+    - Preserves semantic meaning of code examples
+    - Prevents broken code from appearing in search results
     
     Args:
         text: The full markdown document text
@@ -56,6 +62,7 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap_lines: int = OVE
     - We split on lines rather than words to preserve markdown structure
     - Heading context is prepended to each chunk for better embeddings
     - Line numbers track the original document position for read_documentation tool
+    - Code blocks (```...```) are never split across chunks
     """
     lines = text.split('\n')
     chunks = []
@@ -72,6 +79,9 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap_lines: int = OVE
     # Why overlap: Prevents losing context when content spans chunk boundaries
     overlap_buffer = []
     
+    # Track code block state to prevent splitting
+    in_code_block = False
+    
     for line in lines:
         # Update heading context as we encounter new headings
         # Why track all three levels: Provides full document hierarchy context
@@ -87,9 +97,11 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap_lines: int = OVE
         
         words = line.split()
         
-        # Check if we should start a new chunk
-        # Why check current_chunk: Prevents creating empty chunks
-        if current_words + len(words) > chunk_size and current_chunk:
+        # Check if we should start a new chunk BEFORE processing code block boundaries
+        # Only chunk if we're NOT in a code block and size limit reached
+        if (current_words + len(words) > chunk_size and 
+            current_chunk and 
+            not in_code_block):
             # Build heading context to prepend to chunk
             # Why prepend headings: Gives embedding model document structure context
             heading_context = []
@@ -121,12 +133,16 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap_lines: int = OVE
             current_words = sum(len(l.split()) for l in current_chunk)
             start_line = current_line - len(overlap_buffer)
         
+        # Track code block boundaries AFTER chunking decision
+        if line.strip().startswith('```'):
+            in_code_block = not in_code_block
+        
         current_chunk.append(line)
         current_words += len(words)
         current_line += 1
     
-    # Handle final chunk (always exists if document has content)
-    if current_chunk:
+    # Handle final chunk (only if document has meaningful content)
+    if current_chunk and any(line.strip() for line in current_chunk):
         heading_context = []
         if current_headings['h1']:
             heading_context.append(current_headings['h1'])

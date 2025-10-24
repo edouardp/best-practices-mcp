@@ -1,18 +1,32 @@
 # Python Best Practices (3.13) — AWS-Native, Lambda & Services
 
-> Opinionated, production-focused checklist for your repos. Defaults: **uv**, **ruff**, **mypy (strict)**, **pytest**, **structlog**, **OpenTelemetry**, **AWS SDK (boto3)**, **Lambda Powertools**, **S3/SQS/AppConfig/Parameter Store**, **CloudFormation**.
+> Opinionated, production-focused checklist for your repos. Defaults: **uv**,
+> **ruff**, **mypy (strict)**, **pytest**, **structlog**, **OpenTelemetry**,
+> **AWS SDK (boto3)**, **Lambda Powertools**, **S3/SQS/AppConfig/Parameter
+> Store**, **CloudFormation**.
 
 ---
 
 ## 0. Golden Rules
 
 ### Prefer Python 3.13; pin exact versions and commit lockfiles
-**Why:** Python 3.13 includes performance improvements, better error messages, and security fixes. Pinning exact versions ensures reproducible builds across environments and prevents "works on my machine" issues. Committed lockfiles guarantee that all team members and CI/CD systems use identical dependency versions, preventing subtle bugs from version drift.
+
+**Why:** Python 3.13 includes performance improvements, better error messages,
+and security fixes. Pinning exact versions ensures reproducible builds across
+environments and prevents "works on my machine" issues. Committed lockfiles
+guarantee that all team members and CI/CD systems use identical dependency
+versions, preventing subtle bugs from version drift.
 
 ### Use uv for env & dependency management; direnv optional
-**Why:** uv is significantly faster than pip and provides better dependency resolution. It creates reproducible environments and handles virtual environment management automatically. direnv can automatically activate environments when entering project directories, reducing context switching overhead and preventing accidental package installation in the wrong environment.
+
+**Why:** uv is significantly faster than pip and provides better dependency
+resolution. It creates reproducible environments and handles virtual environment
+management automatically. direnv can automatically activate environments when
+entering project directories, reducing context switching overhead and preventing
+accidental package installation in the wrong environment.
 
 ```bash
+
 # Initialize project with uv
 uv init myproject
 cd myproject
@@ -30,10 +44,20 @@ direnv allow
 ```
 
 ### Treat warnings as errors in CI; fail on lints/format/type errors
-**Why:** Warnings often indicate potential bugs or code quality issues that will become problems later. Treating them as errors in CI prevents technical debt accumulation and forces developers to address issues immediately. This maintains code quality standards and prevents the gradual degradation that occurs when warnings are ignored.
+
+**Why:** Warnings often indicate potential bugs or code quality issues that will
+become problems later. Treating them as errors in CI prevents technical debt
+accumulation and forces developers to address issues immediately. This maintains
+code quality standards and prevents the gradual degradation that occurs when
+warnings are ignored.
 
 ### Structured logs (structlog) everywhere; include trace_id, request_id, correlation_id
-**Why:** Structured logging enables powerful querying and filtering in log aggregation systems like CloudWatch Logs Insights. Including correlation IDs allows you to trace requests across multiple services and Lambda functions, making debugging distributed systems much easier. JSON format integrates seamlessly with modern observability tools.
+
+**Why:** Structured logging enables powerful querying and filtering in log
+aggregation systems like CloudWatch Logs Insights. Including correlation IDs
+allows you to trace requests across multiple services and Lambda functions,
+making debugging distributed systems much easier. JSON format integrates
+seamlessly with modern observability tools.
 
 ```python
 import structlog
@@ -66,7 +90,7 @@ def process_order(order_id: str, customer_id: str):
         trace_id=get_trace_id(),
         service="order-processor"
     )
-    
+
     log.info("Processing order started")
     try:
         # Business logic here
@@ -77,23 +101,47 @@ def process_order(order_id: str, customer_id: str):
 ```
 
 ### OpenTelemetry traces/metrics by default (export to X-Ray/CloudWatch)
-**Why:** OpenTelemetry provides vendor-neutral observability that works across different cloud providers and tools. X-Ray integration gives you distributed tracing across AWS services, helping identify performance bottlenecks and understand request flows. This is crucial for debugging microservices and serverless architectures.
+
+**Why:** OpenTelemetry provides vendor-neutral observability that works across
+different cloud providers and tools. X-Ray integration gives you distributed
+tracing across AWS services, helping identify performance bottlenecks and
+understand request flows. This is crucial for debugging microservices and
+serverless architectures.
 
 ### Prefer SSM Parameter Store (SecureString) for secrets/config; use Secrets Manager only for auto-rotation
-**Why:** SSM Parameter Store is cost-effective for most configuration needs and integrates well with IAM for access control. SecureString parameters are encrypted with KMS. Secrets Manager costs more but provides automatic rotation capabilities, making it ideal for database passwords and API keys that need regular rotation.
+
+**Why:** SSM Parameter Store is cost-effective for most configuration needs and
+integrates well with IAM for access control. SecureString parameters are
+encrypted with KMS. Secrets Manager costs more but provides automatic rotation
+capabilities, making it ideal for database passwords and API keys that need
+regular rotation.
 
 ### For Lambda: small handlers, import discipline, arm64, layers for heavy deps; use aws-lambda-powertools
-**Why:** Small handlers reduce cold start times and make functions easier to test and debug. Import discipline (importing heavy libraries inside functions) reduces initialization time. ARM64 provides better price-performance on AWS Graviton. Layers allow sharing heavy dependencies across functions while keeping deployment packages small. Lambda Powertools provides battle-tested utilities for logging, tracing, and common patterns.
+
+**Why:** Small handlers reduce cold start times and make functions easier to
+test and debug. Import discipline (importing heavy libraries inside functions)
+reduces initialization time. ARM64 provides better price-performance on AWS
+Graviton. Layers allow sharing heavy dependencies across functions while keeping
+deployment packages small. Lambda Powertools provides battle-tested utilities
+for logging, tracing, and common patterns.
 
 ---
 
 ## 1. Project Layout
 
 ### Use src layout to avoid implicit imports
-**Why:** The src layout prevents accidentally importing your package from the project root during development, which can hide import errors that would occur in production. This ensures your package is properly installable and that tests run against the installed version, not the development version.
+
+**Why:** The src layout prevents accidentally importing your package from the
+project root during development, which can hide import errors that would occur
+in production. This ensures your package is properly installable and that tests
+run against the installed version, not the development version.
 
 ### Keep modules < 400 lines; one responsibility per file
-**Why:** Smaller modules are easier to understand, test, and maintain. The 400-line limit is a practical threshold where cognitive load becomes significant. Single responsibility per file makes it easier to locate functionality and reduces merge conflicts in team environments.
+
+**Why:** Smaller modules are easier to understand, test, and maintain. The
+400-line limit is a practical threshold where cognitive load becomes
+significant. Single responsibility per file makes it easier to locate
+functionality and reduces merge conflicts in team environments.
 
 ```
 repo/
@@ -111,24 +159,49 @@ repo/
 ## 2. Tooling & Config
 
 ### uv: lock, sync, no pip in CI
-**Why:** uv provides deterministic dependency resolution and is significantly faster than pip. Using `uv sync` instead of pip ensures exact reproduction of the development environment in CI. Avoiding pip prevents version conflicts and ensures consistent behavior across all environments.
+
+**Why:** uv provides deterministic dependency resolution and is significantly
+faster than pip. Using `uv sync` instead of pip ensures exact reproduction of
+the development environment in CI. Avoiding pip prevents version conflicts and
+ensures consistent behavior across all environments.
 
 ### ruff: lint + format (ruff check --fix, ruff format)
-**Why:** ruff is extremely fast (written in Rust) and combines multiple tools (flake8, isort, black) into one. It catches common Python mistakes, enforces consistent formatting, and can automatically fix many issues. The speed improvement makes it practical to run on every save and in pre-commit hooks.
+
+**Why:** ruff is extremely fast (written in Rust) and combines multiple tools
+(flake8, isort, black) into one. It catches common Python mistakes, enforces
+consistent formatting, and can automatically fix many issues. The speed
+improvement makes it practical to run on every save and in pre-commit hooks.
 
 ### mypy: --strict; add type hints for public funcs/classes
-**Why:** Static type checking catches bugs before runtime and improves code documentation. Strict mode enables all type checking features, providing maximum safety. Type hints on public interfaces make APIs self-documenting and enable better IDE support with autocomplete and refactoring.
+
+**Why:** Static type checking catches bugs before runtime and improves code
+documentation. Strict mode enables all type checking features, providing maximum
+safety. Type hints on public interfaces make APIs self-documenting and enable
+better IDE support with autocomplete and refactoring.
 
 ### pytest: -q --maxfail=1 --disable-warnings -x; AAA test structure; Given_When_Should naming
-**Why:** These flags make test runs faster and stop on first failure for quicker feedback. AAA (Arrange, Act, Assert) structure makes tests readable and maintainable. Given_When_Should naming clearly communicates test scenarios and expected outcomes, making test failures easier to understand.
+
+**Why:** These flags make test runs faster and stop on first failure for quicker
+feedback. AAA (Arrange, Act, Assert) structure makes tests readable and
+maintainable. Given_When_Should naming clearly communicates test scenarios and
+expected outcomes, making test failures easier to understand.
 
 ### coverage: pytest --cov=src --cov-fail-under=90 (domain code gate)
-**Why:** High test coverage on domain logic ensures your core business rules are protected against regressions. The 90% threshold balances thoroughness with practicality. Focusing on src/ directory excludes test code from coverage calculations.
+
+**Why:** High test coverage on domain logic ensures your core business rules are
+protected against regressions. The 90% threshold balances thoroughness with
+practicality. Focusing on src/ directory excludes test code from coverage
+calculations.
 
 ### pre-commit: run ruff, mypy (fast), markdownlint, yaml-lint
-**Why:** Pre-commit hooks catch issues before they reach CI, saving time and preventing broken builds. Running fast checks locally provides immediate feedback. Including documentation linting ensures consistent documentation quality.
+
+**Why:** Pre-commit hooks catch issues before they reach CI, saving time and
+preventing broken builds. Running fast checks locally provides immediate
+feedback. Including documentation linting ensures consistent documentation
+quality.
 
 `pyproject.toml` sketch:
+
 ```toml
 [project]
 name = "mypkg"
@@ -151,9 +224,17 @@ strict = true
 ## 3. Logging & Observability
 
 ### structlog JSON logger; add context via processors; never print() in production
-**Why:** structlog provides structured logging that's queryable in log aggregation systems. Processors allow you to add consistent context (timestamps, service info) to all log entries. JSON format integrates seamlessly with CloudWatch Logs Insights and other tools. print() statements are not captured by logging systems and lack context.
 
-**Context Logging is Critical:** Adding context into the call stack (or equivalent in async code) is essential for producing meaningful logs. When a line is logged, we should see the context (what operation, which user, what request) as structured properties, not just the log message.
+**Why:** structlog provides structured logging that's queryable in log
+aggregation systems. Processors allow you to add consistent context (timestamps,
+service info) to all log entries. JSON format integrates seamlessly with
+CloudWatch Logs Insights and other tools. print() statements are not captured by
+logging systems and lack context.
+
+**Context Logging is Critical:** Adding context into the call stack (or
+equivalent in async code) is essential for producing meaningful logs. When a
+line is logged, we should see the context (what operation, which user, what
+request) as structured properties, not just the log message.
 
 ```python
 import structlog
@@ -175,17 +256,17 @@ def add_request_context(logger, method_name, event_dict):
         event_dict['request_id'] = request_id_var.get()
     except LookupError:
         pass
-    
+
     try:
         event_dict['user_id'] = user_id_var.get()
     except LookupError:
         pass
-    
+
     try:
         event_dict['operation'] = operation_var.get()
     except LookupError:
         pass
-    
+
     return event_dict
 
 def add_exception_context(logger, method_name, event_dict):
@@ -248,7 +329,7 @@ def log_context(**kwargs):
             tokens.append(user_id_var.set(value))
         elif key == 'operation':
             tokens.append(operation_var.set(value))
-    
+
     try:
         yield
     finally:
@@ -262,10 +343,10 @@ def log_context(**kwargs):
 class OrderService:
     def __init__(self):
         self.logger = structlog.get_logger(__name__)
-    
+
     async def process_order(self, order_data: dict, user_id: str) -> dict:
         request_id = str(uuid.uuid4())
-        
+
         # Set context for the entire operation
         with log_context(
             request_id=request_id,
@@ -278,67 +359,67 @@ class OrderService:
                 item_count=len(order_data.get('items', [])),
                 payment_method=order_data.get('payment_method')
             )
-            
-            log.info("Starting order processing", 
-                    user_id=user_id, 
+
+            log.info("Starting order processing",
+                    user_id=user_id,
                     amount=order_data.get('amount'))
-            
+
             try:
                 # Validate order
                 await self._validate_order(order_data, log)
-                
+
                 # Process payment
                 payment_result = await self._process_payment(order_data, log)
-                
+
                 # Create order
                 order = await self._create_order(order_data, payment_result, log)
-                
-                log.info("Order processed successfully", 
+
+                log.info("Order processed successfully",
                         order_id=order['id'],
                         final_amount=order['amount'])
-                
+
                 # Log business event
                 self._log_business_event("order_created", {
                     "order_id": order['id'],
                     "amount": order['amount'],
                     "user_id": user_id
                 })
-                
+
                 return order
-                
+
             except ValidationError as e:
-                log.warning("Order validation failed", 
+                log.warning("Order validation failed",
                            validation_errors=e.errors,
                            exception=e)
                 raise
             except PaymentError as e:
-                log.error("Payment processing failed", 
+                log.error("Payment processing failed",
                          payment_error_code=e.error_code,
                          exception=e)
                 raise
             except Exception as e:
-                log.error("Unexpected error processing order", 
+                log.error("Unexpected error processing order",
                          exception=e,
                          exc_info=True)
                 raise
-    
+
     async def _validate_order(self, order_data: dict, log):
         """Validate order with context logging"""
         with log_context(operation="validate_order"):
             validation_log = log.bind(validation_step="order_validation")
-            
+
             validation_log.debug("Starting order validation")
-            
+
             if not order_data.get('items'):
                 validation_log.warning("Order validation failed: no items")
                 raise ValidationError("Order must contain at least one item")
-            
+
             if order_data.get('amount', 0) <= 0:
                 validation_log.warning("Order validation failed: invalid amount")
                 raise ValidationError("Order amount must be positive")
-            
+
             validation_log.debug("Order validation completed successfully")
-    
+
     async def _process_payment(self, order_data: dict, log):
         """Process payment with context logging"""
         with log_context(operation="process_payment"):
@@ -346,28 +427,28 @@ class OrderService:
                 payment_method=order_data.get('payment_method'),
                 payment_amount=order_data.get('amount')
             )
-            
+
             payment_log.info("Processing payment")
-            
+
             # Simulate payment processing
             payment_result = {
                 'id': str(uuid.uuid4()),
                 'status': 'completed',
                 'amount': order_data['amount']
             }
-            
-            payment_log.info("Payment processed successfully", 
+
+            payment_log.info("Payment processed successfully",
                            payment_id=payment_result['id'])
-            
+
             return payment_result
-    
+
     def _log_business_event(self, event_name: str, event_data: dict):
         """Log business events with special context"""
         business_log = self.logger.bind(
             event_type="business",
             event_name=event_name
         )
-        
+
         business_log.info(f"Business event: {event_name}", **event_data)
 
 # Lambda handler with context
@@ -379,7 +460,7 @@ powertools_logger = PowertoolsLogger()
 
 def lambda_handler(event: dict, context: LambdaContext) -> dict:
     request_id = context.aws_request_id
-    
+
     # Set up context for the entire request
     with log_context(
         request_id=request_id,
@@ -390,18 +471,18 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
             function_name=context.function_name,
             remaining_time_ms=context.get_remaining_time_in_millis()
         )
-        
+
         log.info("Lambda invocation started")
-        
+
         try:
             # Extract user context
             user_id = event.get('requestContext', {}).get('authorizer', {}).get('userId')
-            
+
             if user_id:
                 with log_context(user_id=user_id):
                     order_service = OrderService()
                     result = await order_service.process_order(event['body'], user_id)
-                    
+
                     log.info("Lambda invocation completed successfully")
                     return {
                         'statusCode': 200,
@@ -413,15 +494,150 @@ def lambda_handler(event: dict, context: LambdaContext) -> dict:
                     'statusCode': 401,
                     'body': json.dumps({'error': 'Unauthorized'})
                 }
-                
+
         except Exception as e:
-            log.error("Lambda invocation failed", 
+            log.error("Lambda invocation failed",
                      exception=e,
                      exc_info=True)
             return {
                 'statusCode': 500,
                 'body': json.dumps({'error': 'Internal server error'})
             }
+
+### Log comprehensive startup metadata on boot and daily
+
+**Why:** Startup logging provides critical debugging information when issues occur days or weeks after deployment. For systems with log rotation, daily logging ensures metadata is always available even if the service runs longer than log retention periods.
+
+```python
+import os
+import sys
+import platform
+import socket
+import json
+from datetime import datetime
+import boto3
+import structlog
+
+logger = structlog.get_logger()
+
+def log_startup_metadata():
+    """Log comprehensive startup metadata for debugging and operations."""
+    
+    # Runtime information
+    runtime_info = {
+        'python_version': sys.version,
+        'platform': platform.platform(),
+        'architecture': platform.machine(),
+        'hostname': socket.gethostname(),
+        'process_id': os.getpid(),
+        'working_directory': os.getcwd(),
+        'startup_time': datetime.utcnow().isoformat()
+    }
+    
+    # Application metadata
+    app_info = {
+        'service_name': os.getenv('SERVICE_NAME', 'unknown'),
+        'version': os.getenv('APP_VERSION', 'unknown'),
+        'environment': os.getenv('ENVIRONMENT', 'unknown'),
+        'build_commit': os.getenv('BUILD_COMMIT', 'unknown'),
+        'build_time': os.getenv('BUILD_TIME', 'unknown')
+    }
+    
+    # AWS metadata (if available)
+    aws_info = {}
+    try:
+        # ECS metadata
+        if os.getenv('ECS_CONTAINER_METADATA_URI_V4'):
+            # Get ECS task metadata
+            import requests
+            metadata_uri = os.getenv('ECS_CONTAINER_METADATA_URI_V4')
+            response = requests.get(f"{metadata_uri}/task", timeout=2)
+            if response.status_code == 200:
+                task_metadata = response.json()
+                aws_info.update({
+                    'ecs_cluster': task_metadata.get('Cluster'),
+                    'ecs_task_arn': task_metadata.get('TaskARN'),
+                    'ecs_family': task_metadata.get('Family'),
+                    'ecs_revision': task_metadata.get('Revision'),
+                    'availability_zone': task_metadata.get('AvailabilityZone')
+                })
+        
+        # Lambda metadata
+        if os.getenv('AWS_LAMBDA_FUNCTION_NAME'):
+            aws_info.update({
+                'lambda_function_name': os.getenv('AWS_LAMBDA_FUNCTION_NAME'),
+                'lambda_function_version': os.getenv('AWS_LAMBDA_FUNCTION_VERSION'),
+                'lambda_runtime': os.getenv('AWS_EXECUTION_ENV'),
+                'lambda_memory_size': os.getenv('AWS_LAMBDA_FUNCTION_MEMORY_SIZE')
+            })
+        
+        # General AWS metadata
+        aws_info.update({
+            'aws_region': os.getenv('AWS_REGION', os.getenv('AWS_DEFAULT_REGION')),
+            'aws_account_id': boto3.client('sts').get_caller_identity().get('Account') if boto3 else None
+        })
+    except Exception as e:
+        aws_info['metadata_error'] = str(e)
+    
+    # Environment variables (sanitized)
+    env_vars = {
+        k: v for k, v in os.environ.items() 
+        if not any(secret in k.upper() for secret in [
+            'PASSWORD', 'SECRET', 'KEY', 'TOKEN', 'CREDENTIAL'
+        ])
+    }
+    
+    # Log startup information
+    logger.info(
+        "Service startup",
+        event_type="service_startup",
+        runtime=runtime_info,
+        application=app_info,
+        aws=aws_info,
+        environment_variables=env_vars
+    )
+
+def schedule_daily_metadata_logging():
+    """Schedule daily metadata logging for log rotation systems."""
+    import schedule
+    import threading
+    import time
+    
+    def daily_metadata_log():
+        logger.info(
+            "Daily metadata refresh",
+            event_type="daily_metadata",
+            timestamp=datetime.utcnow().isoformat(),
+            uptime_seconds=time.time() - startup_time
+        )
+        log_startup_metadata()
+    
+    # Schedule for 00:00:01 daily
+    schedule.every().day.at("00:00:01").do(daily_metadata_log)
+    
+    def run_scheduler():
+        while True:
+            schedule.run_pending()
+            time.sleep(60)
+    
+    # Run scheduler in background thread
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+
+# Call at application startup
+startup_time = time.time()
+log_startup_metadata()
+schedule_daily_metadata_logging()
+```
+
+**Key Benefits:**
+- **Debugging support**: Runtime versions, environment, and AWS context available in logs
+- **Deployment tracking**: Build commit, version, and deployment time logged
+- **Environment validation**: Confirms correct environment variables and AWS setup
+- **Log rotation resilience**: Daily logging ensures metadata survives log retention periods
+- **Security conscious**: Automatically filters sensitive environment variables
+
+**For log rotation systems**: Daily metadata logging (scheduled for 00:00:01) ensures startup information is always available in logs, even for long-running services that exceed log retention periods.
 
 # Middleware for web frameworks (FastAPI example)
 from fastapi import FastAPI, Request
@@ -432,7 +648,7 @@ app = FastAPI()
 @app.middleware("http")
 async def logging_middleware(request: Request, call_next):
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
-    
+
     with log_context(
         request_id=request_id,
         operation="http_request"
@@ -443,24 +659,24 @@ async def logging_middleware(request: Request, call_next):
             user_agent=request.headers.get("user-agent"),
             client_ip=request.client.host
         )
-        
+
         start_time = time.time()
-        
+
         try:
             response = await call_next(request)
-            
+
             duration_ms = (time.time() - start_time) * 1000
-            
+
             log.info("Request completed",
                     status_code=response.status_code,
                     duration_ms=round(duration_ms, 2))
-            
+
             response.headers["x-request-id"] = request_id
             return response
-            
+
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
-            
+
             log.error("Request failed",
                      duration_ms=round(duration_ms, 2),
                      exception=e)
@@ -468,12 +684,18 @@ async def logging_middleware(request: Request, call_next):
 ```
 
 **Key Processor Benefits:**
-- **add_request_context()**: Automatically adds request/user context to all log entries
-- **add_exception_context()**: Provides rich exception information including cause chains and full tracebacks
-- **add_service_context()**: Adds service-level metadata for better log aggregation
-- **Context Variables**: Enable context to flow through async operations seamlessly
+
+- **add_request_context()**: Automatically adds request/user context to all log
+  entries
+- **add_exception_context()**: Provides rich exception information including
+  cause chains and full tracebacks
+- **add_service_context()**: Adds service-level metadata for better log
+  aggregation
+- **Context Variables**: Enable context to flow through async operations
+  seamlessly
 
 **Context Logging Best Practices:**
+
 - Use `contextvars` for async-safe context propagation
 - Implement custom processors to add consistent context
 - Use `log_context()` context manager for operation-scoped context
@@ -481,10 +703,20 @@ async def logging_middleware(request: Request, call_next):
 - Log business events with special context for analytics and monitoring
 
 ### Include: service name, version, env, trace ids, customer/account id (if safe)
-**Why:** Service name and version help identify which service and deployment generated logs. Environment information prevents confusion between dev/staging/prod logs. Trace IDs enable correlation across distributed systems. Customer/account IDs help with support and debugging, but must be handled carefully for privacy compliance.
+
+**Why:** Service name and version help identify which service and deployment
+generated logs. Environment information prevents confusion between
+dev/staging/prod logs. Trace IDs enable correlation across distributed systems.
+Customer/account IDs help with support and debugging, but must be handled
+carefully for privacy compliance.
 
 ### OpenTelemetry: SDK, instrumentation, exporters; propagate context across threads/async
-**Why:** OpenTelemetry provides vendor-neutral observability that works across different tools and cloud providers. Automatic instrumentation for boto3 and other libraries reduces manual work. Context propagation ensures trace continuity across async operations and thread boundaries, which is crucial for understanding request flows in concurrent systems.
+
+**Why:** OpenTelemetry provides vendor-neutral observability that works across
+different tools and cloud providers. Automatic instrumentation for boto3 and
+other libraries reduces manual work. Context propagation ensures trace
+continuity across async operations and thread boundaries, which is crucial for
+understanding request flows in concurrent systems.
 
 ```python
 from opentelemetry import trace
@@ -513,7 +745,7 @@ def process_payment(payment_data: dict):
     span = trace.get_current_span()
     span.set_attribute("payment.amount", payment_data["amount"])
     span.set_attribute("payment.currency", payment_data["currency"])
-    
+
     # Business logic here
     return {"status": "success"}
 
@@ -530,10 +762,12 @@ async def async_operation():
         detach(token)
 ```
 
-- `structlog` JSON logger; add context via processors; never print() in production paths.
+- `structlog` JSON logger; add context via processors; never print() in
+  production paths.
 - Include: service name, version, env, trace ids, customer/account id (if safe).
 - OTEL:
-  - `opentelemetry-sdk`, `opentelemetry-instrumentation-boto3`, `opentelemetry-exporter-otlp` or AWS X-Ray exporter.
+  - `opentelemetry-sdk`, `opentelemetry-instrumentation-boto3`,
+    `opentelemetry-exporter-otlp` or AWS X-Ray exporter.
   - Always propagate context across threads and async tasks.
 
 ---
@@ -541,7 +775,12 @@ async def async_operation():
 ## 4. AWS Conventions
 
 ### Config: read from SSM Parameter Store at boot, cache in-memory; refresh on timer
-**Why:** SSM Parameter Store provides centralized, encrypted configuration management with fine-grained IAM control. Reading at boot reduces API calls and improves performance. In-memory caching prevents repeated API calls during request processing. Timer-based refresh allows configuration updates without redeployment while maintaining performance.
+
+**Why:** SSM Parameter Store provides centralized, encrypted configuration
+management with fine-grained IAM control. Reading at boot reduces API calls and
+improves performance. In-memory caching prevents repeated API calls during
+request processing. Timer-based refresh allows configuration updates without
+redeployment while maintaining performance.
 
 ```python
 import boto3
@@ -565,7 +804,7 @@ class ConfigManager:
         self._refresh_thread = None
         self.refresh_config()
         self._start_refresh_timer()
-    
+
     def refresh_config(self):
         """Refresh configuration from SSM Parameter Store"""
         try:
@@ -574,10 +813,10 @@ class ConfigManager:
                 Recursive=True,
                 WithDecryption=True
             )
-            
-            params = {p['Name'].replace(self.parameter_prefix, ''): p['Value'] 
+
+            params = {p['Name'].replace(self.parameter_prefix, ''): p['Value']
                      for p in response['Parameters']}
-            
+
             with self._lock:
                 self._config = Config(
                     database_url=params.get('database_url', ''),
@@ -588,17 +827,17 @@ class ConfigManager:
                 )
         except Exception as e:
             logger.error("Failed to refresh config", error=str(e))
-    
+
     def _start_refresh_timer(self):
         """Start background timer to refresh config every 5 minutes"""
         def refresh_loop():
             while True:
                 time.sleep(300)  # 5 minutes
                 self.refresh_config()
-        
+
         self._refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
         self._refresh_thread.start()
-    
+
     @property
     def config(self) -> Config:
         with self._lock:
@@ -612,31 +851,63 @@ def get_database_connection():
 ```
 
 ### Feature Flags: AppConfig with JSON schema validators; stage-aware
-**Why:** AppConfig provides safe feature flag deployment with rollback capabilities and gradual rollouts. JSON schema validation prevents invalid configurations from breaking your application. Stage-aware flags allow different behavior in dev/staging/prod environments, enabling safe testing of new features.
+
+**Why:** AppConfig provides safe feature flag deployment with rollback
+capabilities and gradual rollouts. JSON schema validation prevents invalid
+configurations from breaking your application. Stage-aware flags allow different
+behavior in dev/staging/prod environments, enabling safe testing of new
+features.
 
 ### Queueing: SNS → SQS (never raw SQS); FIFO for ordered work + DLQ
-**Why:** SNS provides fan-out capabilities and decouples publishers from consumers, making your architecture more flexible. Raw SQS creates tight coupling between services. FIFO queues ensure message ordering when required (like financial transactions). Dead Letter Queues capture failed messages for analysis and prevent infinite retry loops.
+
+**Why:** SNS provides fan-out capabilities and decouples publishers from
+consumers, making your architecture more flexible. Raw SQS creates tight
+coupling between services. FIFO queues ensure message ordering when required
+(like financial transactions). Dead Letter Queues capture failed messages for
+analysis and prevent infinite retry loops.
 
 ### KMS: use GenerateDataKey and Sign/Verify; never manage raw keys
-**Why:** GenerateDataKey provides envelope encryption, which is more secure and performant than encrypting data directly with KMS keys. Sign/Verify operations provide digital signatures for data integrity. Managing raw keys increases security risk and complexity - let AWS handle key management.
+
+**Why:** GenerateDataKey provides envelope encryption, which is more secure and
+performant than encrypting data directly with KMS keys. Sign/Verify operations
+provide digital signatures for data integrity. Managing raw keys increases
+security risk and complexity - let AWS handle key management.
 
 ### S3: set bucket policies, SSE-S3 or SSE-KMS; object versioning on critical data
-**Why:** Bucket policies provide defense-in-depth security beyond IAM roles. Server-side encryption protects data at rest. SSE-KMS provides additional audit trails and key rotation capabilities. Object versioning protects against accidental deletion or corruption of critical data.
+
+**Why:** Bucket policies provide defense-in-depth security beyond IAM roles.
+Server-side encryption protects data at rest. SSE-KMS provides additional audit
+trails and key rotation capabilities. Object versioning protects against
+accidental deletion or corruption of critical data.
 
 ### IAM: per-service roles, least privilege; VPC endpoints for AWS APIs where possible
-**Why:** Per-service roles limit blast radius if credentials are compromised. Least privilege reduces attack surface and prevents accidental access to unrelated resources. VPC endpoints keep AWS API traffic within your VPC, improving security and potentially reducing data transfer costs.
+
+**Why:** Per-service roles limit blast radius if credentials are compromised.
+Least privilege reduces attack surface and prevents accidental access to
+unrelated resources. VPC endpoints keep AWS API traffic within your VPC,
+improving security and potentially reducing data transfer costs.
 
 ---
 
 ## 5. Lambda Guidance
 
 ### Runtime: python3.13, arm64; keep handler tiny
-**Why:** Python 3.13 provides the latest performance improvements and security fixes. ARM64 (Graviton) offers 20% better price-performance compared to x86. Tiny handlers reduce cold start times and make functions easier to test, debug, and understand. Large handlers often indicate poor separation of concerns.
+
+**Why:** Python 3.13 provides the latest performance improvements and security
+fixes. ARM64 (Graviton) offers 20% better price-performance compared to x86.
+Tiny handlers reduce cold start times and make functions easier to test, debug,
+and understand. Large handlers often indicate poor separation of concerns.
 
 ### Imports: move heavy imports behind functions; use layers for scientific libs
-**Why:** Heavy imports during module initialization increase cold start times. Moving imports inside functions (lazy loading) defers the cost until the functionality is actually needed. Layers allow sharing large dependencies (like numpy, pandas) across multiple functions while keeping individual deployment packages small.
+
+**Why:** Heavy imports during module initialization increase cold start times.
+Moving imports inside functions (lazy loading) defers the cost until the
+functionality is actually needed. Layers allow sharing large dependencies (like
+numpy, pandas) across multiple functions while keeping individual deployment
+packages small.
 
 ```python
+
 # ❌ Bad - Heavy imports at module level
 import pandas as pd
 import numpy as np
@@ -656,18 +927,18 @@ logger = Logger()
 
 def lambda_handler(event, context):
     event_type = event.get('type')
-    
+
     if event_type == 'data_processing':
         # Only import when needed
         import pandas as pd
         import numpy as np
         return process_data_with_pandas(event['data'])
-    
+
     elif event_type == 'ml_inference':
         # Heavy ML libraries only loaded when needed
         import tensorflow as tf
         return run_inference(event['input'])
-    
+
     else:
         # Simple operations don't need heavy imports
         return {'status': 'success', 'message': 'Event processed'}
@@ -678,19 +949,33 @@ def process_data_with_pandas(data):
     return df.to_dict()
 
 # Layer structure for scientific libraries
+
 # layers/
+
 # └── python-scientific/
+
 #     └── python/
+
 #         └── lib/
+
 #             └── python3.13/
+
 #                 └── site-packages/
+
 #                     ├── numpy/
+
 #                     ├── pandas/
+
 #                     └── scipy/
 ```
 
 ### Powertools: logger, tracer, metrics, idempotency utility, parser
-**Why:** Lambda Powertools provides battle-tested utilities that handle common patterns correctly. The logger integrates with CloudWatch and X-Ray. Tracer provides distributed tracing. Metrics integrate with CloudWatch. Idempotency utility prevents duplicate processing. Parser validates and transforms event data safely.
+
+**Why:** Lambda Powertools provides battle-tested utilities that handle common
+patterns correctly. The logger integrates with CloudWatch and X-Ray. Tracer
+provides distributed tracing. Metrics integrate with CloudWatch. Idempotency
+utility prevents duplicate processing. Parser validates and transforms event
+data safely.
 
 ```python
 from aws_lambda_powertools import Logger, Tracer, Metrics
@@ -718,27 +1003,27 @@ class OrderEvent(BaseModel):
 def lambda_handler(event: dict, context: LambdaContext) -> dict:
     # Parse and validate event
     order_event = parse(event=event, model=OrderEvent)
-    
+
     # Add custom metrics
     metrics.add_metric(name="OrderProcessed", unit=MetricUnit.Count, value=1)
     metrics.add_metric(name="OrderAmount", unit=MetricUnit.None, value=order_event.amount)
-    
+
     # Add tracing metadata
     tracer.put_metadata(key="order_id", value=order_event.order_id)
     tracer.put_annotation(key="currency", value=order_event.currency)
-    
+
     # Structured logging with context
     logger.info("Processing order", extra={
         "order_id": order_event.order_id,
         "customer_id": order_event.customer_id,
         "amount": order_event.amount
     })
-    
+
     try:
         result = process_order(order_event)
         logger.info("Order processed successfully", extra={"result": result})
         return {"statusCode": 200, "body": result}
-    
+
     except Exception as e:
         logger.exception("Order processing failed")
         metrics.add_metric(name="OrderProcessingError", unit=MetricUnit.Count, value=1)
@@ -751,23 +1036,45 @@ def process_order(order: OrderEvent) -> dict:
 ```
 
 ### Timeouts: set < 30s unless required; configure reserved concurrency
-**Why:** Short timeouts prevent runaway functions from consuming resources and billing. Most business logic should complete quickly - long timeouts often indicate architectural issues. Reserved concurrency prevents one function from consuming all available concurrency and affecting other functions.
+
+**Why:** Short timeouts prevent runaway functions from consuming resources and
+billing. Most business logic should complete quickly - long timeouts often
+indicate architectural issues. Reserved concurrency prevents one function from
+consuming all available concurrency and affecting other functions.
 
 ### Retries & DLQ: configure per trigger (SQS/SNS/EventBridge)
-**Why:** Different event sources have different retry semantics and failure modes. SQS provides built-in retry with visibility timeout. SNS retries are limited. EventBridge has its own retry configuration. Dead Letter Queues capture failed events for analysis and manual processing.
+
+**Why:** Different event sources have different retry semantics and failure
+modes. SQS provides built-in retry with visibility timeout. SNS retries are
+limited. EventBridge has its own retry configuration. Dead Letter Queues capture
+failed events for analysis and manual processing.
 
 ### Use asyncio sparingly; Lambda concurrency is the scaler
-**Why:** Lambda's concurrency model handles scaling automatically by running multiple instances. Adding asyncio complexity within a single Lambda often provides minimal benefit while making code harder to debug. Use asyncio only when you have genuine concurrent I/O within a single request.
+
+**Why:** Lambda's concurrency model handles scaling automatically by running
+multiple instances. Adding asyncio complexity within a single Lambda often
+provides minimal benefit while making code harder to debug. Use asyncio only
+when you have genuine concurrent I/O within a single request.
 
 ---
 
 ## 6. HTTP Clients & Retries
 
 ### Use requests or httpx (async). Set timeouts and retries with jitter
-**Why:** Both requests and httpx are mature, well-tested HTTP clients. Timeouts prevent hanging requests that can exhaust connection pools and Lambda execution time. Retries with exponential backoff and jitter handle transient failures gracefully while avoiding thundering herd problems that can overwhelm downstream services.
+
+**Why:** Both requests and httpx are mature, well-tested HTTP clients. Timeouts
+prevent hanging requests that can exhaust connection pools and Lambda execution
+time. Retries with exponential backoff and jitter handle transient failures
+gracefully while avoiding thundering herd problems that can overwhelm downstream
+services.
 
 ### For AWS SDK: set botocore.config.Config (retries, timeouts, user_agent)
-**Why:** The default boto3 configuration may not be optimal for your use case. Custom retry configuration handles AWS service throttling appropriately. Timeouts prevent long-running AWS API calls from consuming Lambda execution time. Custom user agents help AWS support identify your application in logs and metrics.
+
+**Why:** The default boto3 configuration may not be optimal for your use case.
+Custom retry configuration handles AWS service throttling appropriately.
+Timeouts prevent long-running AWS API calls from consuming Lambda execution
+time. Custom user agents help AWS support identify your application in logs and
+metrics.
 
 ```python
 import boto3
@@ -790,15 +1097,15 @@ dynamodb = boto3.resource('dynamodb', config=config)
 
 # HTTP client with retries and jitter
 @retry(
-    stop=stop_after_attempt(5), 
+    stop=stop_after_attempt(5),
     wait=wait_exponential_jitter(initial=0.2, max=5.0)
 )
 def call_external_api(url: str, data: dict) -> dict:
     import requests
-    
+
     response = requests.post(
-        url, 
-        json=data, 
+        url,
+        json=data,
         timeout=(5, 30),  # (connect_timeout, read_timeout)
         headers={'User-Agent': 'MyApp/1.0.0'}
     )
@@ -836,7 +1143,12 @@ def call_api(...): ...
 ## 7. Testing
 
 ### Unit tests: pytest, AAA, Given_When_Should, isolate IO; use fakes not real AWS
-**Why:** pytest is the most popular Python testing framework with excellent plugin ecosystem. AAA structure makes tests readable and maintainable. Given_When_Should naming clearly communicates test scenarios. Isolating I/O makes tests fast and reliable. Fakes provide predictable behavior without external dependencies or costs.
+
+**Why:** pytest is the most popular Python testing framework with excellent
+plugin ecosystem. AAA structure makes tests readable and maintainable.
+Given_When_Should naming clearly communicates test scenarios. Isolating I/O
+makes tests fast and reliable. Fakes provide predictable behavior without
+external dependencies or costs.
 
 ```python
 import pytest
@@ -846,31 +1158,31 @@ from typing import Protocol
 
 # Test structure with AAA and Given_When_Should naming
 class TestOrderProcessor:
-    
+
     def test_given_valid_order_when_processing_should_return_success(self):
         # Arrange
         mock_payment_service = Mock()
         mock_payment_service.process_payment.return_value = {"status": "success"}
-        
+
         processor = OrderProcessor(payment_service=mock_payment_service)
         order = Order(id="123", amount=100.0, currency="USD")
-        
+
         # Act
         result = processor.process_order(order)
-        
+
         # Assert
         assert result["status"] == "processed"
         assert result["order_id"] == "123"
         mock_payment_service.process_payment.assert_called_once_with(order.amount, order.currency)
-    
+
     def test_given_payment_failure_when_processing_should_raise_payment_error(self):
         # Arrange
         mock_payment_service = Mock()
         mock_payment_service.process_payment.side_effect = PaymentError("Card declined")
-        
+
         processor = OrderProcessor(payment_service=mock_payment_service)
         order = Order(id="123", amount=100.0, currency="USD")
-        
+
         # Act & Assert
         with pytest.raises(PaymentError, match="Card declined"):
             processor.process_order(order)
@@ -879,10 +1191,10 @@ class TestOrderProcessor:
 class FakeS3Client:
     def __init__(self):
         self.objects = {}
-    
+
     def put_object(self, Bucket: str, Key: str, Body: bytes):
         self.objects[f"{Bucket}/{Key}"] = Body
-    
+
     def get_object(self, Bucket: str, Key: str):
         key = f"{Bucket}/{Key}"
         if key not in self.objects:
@@ -902,12 +1214,12 @@ class Order:
 class OrderProcessor:
     def __init__(self, payment_service: PaymentServiceProtocol):
         self.payment_service = payment_service
-    
+
     def process_order(self, order: Order) -> dict:
         payment_result = self.payment_service.process_payment(order.amount, order.currency)
         if payment_result["status"] != "success":
             raise PaymentError("Payment failed")
-        
+
         return {"status": "processed", "order_id": order.id}
 
 # Property-based testing with hypothesis
@@ -921,37 +1233,64 @@ from hypothesis import given, strategies as st
 def test_order_processing_with_various_inputs(order_id, amount, currency):
     mock_payment_service = Mock()
     mock_payment_service.process_payment.return_value = {"status": "success"}
-    
+
     processor = OrderProcessor(payment_service=mock_payment_service)
     order = Order(id=order_id, amount=amount, currency=currency)
-    
+
     result = processor.process_order(order)
-    
+
     assert result["status"] == "processed"
     assert result["order_id"] == order_id
 ```
 
 ### Integration: testcontainers for MySQL/Redis; moto only for fast, non-critical mocks
-**Why:** testcontainers spin up real database instances in Docker, ensuring your integration tests run against the same technology as production. This catches integration issues that mocks might miss. moto is useful for simple AWS service mocking but doesn't perfectly replicate AWS behavior, so use it judiciously.
+
+**Why:** testcontainers spin up real database instances in Docker, ensuring your
+integration tests run against the same technology as production. This catches
+integration issues that mocks might miss. moto is useful for simple AWS service
+mocking but doesn't perfectly replicate AWS behavior, so use it judiciously.
 
 ### Contract: Pact for consumer/provider contracts with BFF/API
-**Why:** Contract tests ensure that service interfaces remain compatible as they evolve independently. Pact enables consumer-driven contracts, putting the consumer in control of what they need and preventing breaking changes. This is crucial for microservice architectures where services are developed by different teams.
+
+**Why:** Contract tests ensure that service interfaces remain compatible as they
+evolve independently. Pact enables consumer-driven contracts, putting the
+consumer in control of what they need and preventing breaking changes. This is
+crucial for microservice architectures where services are developed by different
+teams.
 
 ### Property-based: hypothesis for critical validators/parsers
-**Why:** Property-based testing generates many test cases automatically, often finding edge cases that manual testing misses. This is especially valuable for validators and parsers that handle user input, where unexpected inputs can cause security vulnerabilities or data corruption.
+
+**Why:** Property-based testing generates many test cases automatically, often
+finding edge cases that manual testing misses. This is especially valuable for
+validators and parsers that handle user input, where unexpected inputs can cause
+security vulnerabilities or data corruption.
 
 ### Mutation: mutmut if needed (target domain modules)
-**Why:** Mutation testing validates the quality of your tests by introducing small changes to your code and checking if tests catch them. This ensures your tests actually verify the behavior they claim to test, not just achieve code coverage through execution. Focus on domain modules where business logic is most critical.
+
+**Why:** Mutation testing validates the quality of your tests by introducing
+small changes to your code and checking if tests catch them. This ensures your
+tests actually verify the behavior they claim to test, not just achieve code
+coverage through execution. Focus on domain modules where business logic is most
+critical.
 
 ---
 
 ## 8. Security
 
 ### bandit + osv-scanner (or pip-audit) in CI
-**Why:** bandit performs static analysis to find common security issues in Python code like hardcoded passwords, SQL injection vulnerabilities, and unsafe function usage. osv-scanner and pip-audit check for known vulnerabilities in your dependencies. Running these in CI catches security issues before they reach production.
+
+**Why:** bandit performs static analysis to find common security issues in
+Python code like hardcoded passwords, SQL injection vulnerabilities, and unsafe
+function usage. osv-scanner and pip-audit check for known vulnerabilities in
+your dependencies. Running these in CI catches security issues before they reach
+production.
 
 ### No pickle or unsafe yaml.load; use safe_load
-**Why:** pickle can execute arbitrary code during deserialization, making it a security risk when handling untrusted data. yaml.load has similar issues. yaml.safe_load only loads basic YAML types, preventing code execution attacks. These practices prevent remote code execution vulnerabilities.
+
+**Why:** pickle can execute arbitrary code during deserialization, making it a
+security risk when handling untrusted data. yaml.load has similar issues.
+yaml.safe_load only loads basic YAML types, preventing code execution attacks.
+These practices prevent remote code execution vulnerabilities.
 
 ```python
 import yaml
@@ -978,15 +1317,15 @@ def load_application_config(config_path: str) -> Dict[str, Any]:
     try:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
-        
+
         # Validate config structure
         required_keys = ['database_url', 'api_key', 'timeout']
         for key in required_keys:
             if key not in config:
                 raise ValueError(f"Missing required config key: {key}")
-        
+
         return config
-    
+
     except yaml.YAMLError as e:
         logger.error("Invalid YAML configuration", error=str(e))
         raise
@@ -1015,17 +1354,30 @@ def deserialize_user_data(data: str) -> UserData:
 ```
 
 ### Secrets from env/SSM only; never in code, never in Git
-**Why:** Hardcoded secrets in code can be accidentally exposed through version control, logs, or error messages. Environment variables and SSM Parameter Store provide secure ways to inject secrets at runtime. This follows the principle of separating configuration from code and reduces the risk of credential exposure.
+
+**Why:** Hardcoded secrets in code can be accidentally exposed through version
+control, logs, or error messages. Environment variables and SSM Parameter Store
+provide secure ways to inject secrets at runtime. This follows the principle of
+separating configuration from code and reduces the risk of credential exposure.
 
 ### Validate all inputs; centralize authN/authZ if building services
-**Why:** Input validation prevents injection attacks, data corruption, and unexpected application behavior. Centralizing authentication and authorization logic makes it easier to maintain security policies consistently and reduces the risk of security bugs from scattered auth code.
+
+**Why:** Input validation prevents injection attacks, data corruption, and
+unexpected application behavior. Centralizing authentication and authorization
+logic makes it easier to maintain security policies consistently and reduces the
+risk of security bugs from scattered auth code.
 
 ---
 
 ## 9. Performance
 
 ### Prefer dataclasses(slots=True) or attrs for hot-path objects; but Pydantic v2 when validation is required
-**Why:** dataclasses with slots reduce memory usage and improve attribute access speed by using a more efficient storage mechanism. attrs provides similar benefits with more features. However, when you need data validation, Pydantic v2 provides excellent performance while ensuring data integrity. Choose the right tool based on whether you need validation.
+
+**Why:** dataclasses with slots reduce memory usage and improve attribute access
+speed by using a more efficient storage mechanism. attrs provides similar
+benefits with more features. However, when you need data validation, Pydantic v2
+provides excellent performance while ensuring data integrity. Choose the right
+tool based on whether you need validation.
 
 ```python
 from dataclasses import dataclass
@@ -1038,7 +1390,7 @@ from pydantic import BaseModel, validator
 class Point:
     x: float
     y: float
-    
+
     def distance_to(self, other: 'Point') -> float:
         return ((self.x - other.x) ** 2 + (self.y - other.y) ** 2) ** 0.5
 
@@ -1048,7 +1400,7 @@ class User:
     id: str
     email: str
     age: Optional[int] = None
-    
+
     @age.validator
     def _validate_age(self, attribute, value):
         if value is not None and (value < 0 or value > 150):
@@ -1061,13 +1413,13 @@ class OrderRequest(BaseModel):
     amount: float
     currency: str
     items: list[str]
-    
+
     @validator('amount')
     def amount_must_be_positive(cls, v):
         if v <= 0:
             raise ValueError('Amount must be positive')
         return v
-    
+
     @validator('currency')
     def currency_must_be_valid(cls, v):
         valid_currencies = {'USD', 'EUR', 'GBP', 'JPY'}
@@ -1080,10 +1432,10 @@ def process_many_points_fast():
     """Using slots=True dataclass for hot path"""
     points = [Point(x=i, y=i*2) for i in range(10000)]
     total_distance = 0.0
-    
+
     for i in range(len(points) - 1):
         total_distance += points[i].distance_to(points[i + 1])
-    
+
     return total_distance
 
 def validate_order_data(raw_data: dict) -> OrderRequest:
@@ -1096,7 +1448,11 @@ def validate_order_data(raw_data: dict) -> OrderRequest:
 ```
 
 ### Avoid global state; use dependency injection via constructors or providers
-**Why:** Global state makes code harder to test, debug, and reason about. It can cause issues in concurrent environments and makes it difficult to isolate components. Dependency injection makes dependencies explicit, improves testability, and makes code more modular and maintainable.
+
+**Why:** Global state makes code harder to test, debug, and reason about. It can
+cause issues in concurrent environments and makes it difficult to isolate
+components. Dependency injection makes dependencies explicit, improves
+testability, and makes code more modular and maintainable.
 
 ```python
 from typing import Protocol
@@ -1126,22 +1482,22 @@ class OrderService:
     database: DatabaseProtocol
     cache: CacheProtocol
     logger: Logger
-    
+
     def process_order(self, order_id: str) -> dict:
         # Dependencies are explicit and testable
         self.logger.info("Processing order", order_id=order_id)
-        
+
         # Try cache first
         cached_order = self.cache.get(f"order:{order_id}")
         if cached_order:
             return json.loads(cached_order)
-        
+
         # Fetch from database
         order = self.database.get_order(order_id)
-        
+
         # Cache for future requests
         self.cache.set(f"order:{order_id}", json.dumps(order))
-        
+
         return order
 
 # Dependency provider pattern
@@ -1150,18 +1506,18 @@ class ServiceProvider:
         self._database = self._create_database()
         self._cache = self._create_cache()
         self._logger = self._create_logger()
-    
+
     def _create_database(self) -> DatabaseProtocol:
         # Database setup logic
         return PostgreSQLDatabase(connection_string=get_db_url())
-    
+
     def _create_cache(self) -> CacheProtocol:
         # Cache setup logic
         return RedisCache(host=get_redis_host())
-    
+
     def _create_logger(self) -> Logger:
         return structlog.get_logger()
-    
+
     def create_order_service(self) -> OrderService:
         return OrderService(
             database=self._database,
@@ -1184,16 +1540,16 @@ def test_order_service_uses_cache():
     mock_cache = Mock(spec=CacheProtocol)
     mock_cache.get.return_value = '{"id": "123", "status": "pending"}'
     mock_logger = Mock()
-    
+
     service = OrderService(
         database=mock_db,
         cache=mock_cache,
         logger=mock_logger
     )
-    
+
     # Act
     result = service.process_order("123")
-    
+
     # Assert
     assert result["id"] == "123"
     mock_cache.get.assert_called_once_with("order:123")
@@ -1201,59 +1557,94 @@ def test_order_service_uses_cache():
 ```
 
 ### Profile with py-spy or scalene in containerized perf tests
-**Why:** py-spy provides low-overhead profiling that works in production environments and doesn't require code changes. scalene provides detailed memory and CPU profiling. Running performance tests in containers ensures profiling results reflect production conditions. Regular profiling helps identify performance regressions before they impact users.
+
+**Why:** py-spy provides low-overhead profiling that works in production
+environments and doesn't require code changes. scalene provides detailed memory
+and CPU profiling. Running performance tests in containers ensures profiling
+results reflect production conditions. Regular profiling helps identify
+performance regressions before they impact users.
 
 ---
 
 ## 10. EARS Requirements
 
-**EARS (Easy Approach to Requirements Syntax) format for Python development requirements:**
+**EARS (Easy Approach to Requirements Syntax) format for Python development
+requirements:**
 
 ### Ubiquitous Requirements
+
 - The system SHALL use Python 3.13 with pinned exact versions in lockfiles
 - The system SHALL use uv for dependency management and virtual environments
 - The system SHALL treat warnings as errors in CI builds
 - The system SHALL use structured logging with JSON output via structlog
 - The system SHALL implement OpenTelemetry tracing with X-Ray export
 - The system SHALL use SSM Parameter Store for configuration and secrets
-- The system SHALL validate all inputs using Pydantic models where validation is required
+- The system SHALL validate all inputs using Pydantic models where validation is
+  required
 
 ### Event-Driven Requirements
-- WHEN a Lambda function is invoked, the system SHALL add request context to log scope
-- WHEN an exception occurs, the system SHALL log structured exception details with full traceback
-- WHEN a configuration parameter changes, the system SHALL refresh cached values within 5 minutes
-- WHEN an AWS API call fails, the system SHALL retry with exponential backoff and jitter
-- WHEN a feature flag is toggled, the system SHALL apply changes without service restart
+
+- WHEN a Lambda function is invoked, the system SHALL add request context to log
+  scope
+- WHEN an exception occurs, the system SHALL log structured exception details
+  with full traceback
+- WHEN a configuration parameter changes, the system SHALL refresh cached values
+  within 5 minutes
+- WHEN an AWS API call fails, the system SHALL retry with exponential backoff
+  and jitter
+- WHEN a feature flag is toggled, the system SHALL apply changes without service
+  restart
 
 ### Unwanted Behavior Requirements
+
 - IF pickle deserialization is used, the system SHALL reject the implementation
 - IF global state is detected, the system SHALL fail code review
-- IF test coverage falls below 90% for domain modules, the system SHALL fail the build
+- IF test coverage falls below 90% for domain modules, the system SHALL fail the
+  build
 - IF unsafe yaml.load is used, the system SHALL prevent execution
 - IF secrets are hardcoded, the system SHALL fail security scanning
 
 ### State-Driven Requirements
-- WHILE processing requests, the system SHALL maintain correlation context using contextvars
-- WHILE running integration tests, the system SHALL use testcontainers for real dependencies
-- WHILE in Lambda execution, the system SHALL use lazy imports for heavy dependencies
+
+- WHILE processing requests, the system SHALL maintain correlation context using
+  contextvars
+- WHILE running integration tests, the system SHALL use testcontainers for real
+  dependencies
+- WHILE in Lambda execution, the system SHALL use lazy imports for heavy
+  dependencies
 - WHILE handling async operations, the system SHALL propagate trace context
 
 ### Optional Feature Requirements
-- WHERE performance is critical, the system SHOULD use dataclasses with slots=True
+
+- WHERE performance is critical, the system SHOULD use dataclasses with
+  slots=True
 - WHERE AWS services are needed in tests, the system SHOULD use LocalStack
 - WHERE complex validation is required, the system SHOULD use Pydantic v2
 - WHERE caching improves performance, the system SHOULD implement Redis caching
 
 ### Complex Requirements
-- WHEN a Lambda function processes an SQS message AND the message is malformed, the system SHALL log the error with message context, move the message to DLQ, and continue processing other messages
-- WHEN an API request is received AND authentication is required, the system SHALL validate the JWT token, extract user context, add user ID to log context, and proceed with request processing
-- WHEN a background task fails AND retry attempts are exhausted, the system SHALL log the failure with full context, publish a failure event to SNS, and update task status in the database
+
+- WHEN a Lambda function processes an SQS message AND the message is malformed,
+  the system SHALL log the error with message context, move the message to DLQ,
+  and continue processing other messages
+- WHEN an API request is received AND authentication is required, the system
+  SHALL validate the JWT token, extract user context, add user ID to log
+  context, and proceed with request processing
+- WHEN a background task fails AND retry attempts are exhausted, the system
+  SHALL log the failure with full context, publish a failure event to SNS, and
+  update task status in the database
 
 ---
 
 ## 11. Checklists
 
-**Why this checklist matters:** This checklist serves as a final verification that all critical practices are implemented. Each item represents a decision that significantly impacts code quality, maintainability, security, or performance. Regular checklist reviews during code reviews and before releases help ensure consistency across projects and prevent regression of important practices.
+**Why this checklist matters:** This checklist serves as a final verification
+that all critical practices are implemented. Each item represents a decision
+that significantly impacts code quality, maintainability, security, or
+performance. Regular checklist reviews during code reviews and before releases
+help ensure consistency across projects and prevent regression of important
+practices.
+
 - [ ] ruff + mypy strict pass
 - [ ] pytest coverage ≥ 90% domain
 - [ ] structlog JSON, OTEL traces

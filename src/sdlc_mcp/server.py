@@ -24,23 +24,52 @@ from typing import List, Dict
 
 import duckdb
 import numpy as np
-from sentence_transformers import SentenceTransformer
+import torch
+from transformers import AutoTokenizer, AutoModel
 from fastmcp import FastMCP
 
 # Configuration constants (must match build_index.py)
 EMBEDDING_MODEL = 'sentence-transformers/all-mpnet-base-v2'
 MAX_SEARCH_LIMIT = 50
 
-# Global model instance (lazy loaded)
+# Global model instances (lazy loaded)
 model = None
+tokenizer = None
 
 def get_model():
-    """Lazy load the embedding model"""
-    global model
+    """Lazy load the embedding model and tokenizer"""
+    global model, tokenizer
     if model is None:
         print("Loading embedding model...", file=sys.stderr)
-        model = SentenceTransformer(EMBEDDING_MODEL)
-    return model
+        tokenizer = AutoTokenizer.from_pretrained(EMBEDDING_MODEL)
+        model = AutoModel.from_pretrained(EMBEDDING_MODEL)
+    return model, tokenizer
+
+def encode_text(texts):
+    """
+    Generate embeddings using direct transformers model.
+    
+    Args:
+        texts: String or list of strings to encode
+    
+    Returns:
+        numpy array of embeddings
+    """
+    model, tokenizer = get_model()
+    
+    if isinstance(texts, str):
+        texts = [texts]
+    
+    # Tokenize input
+    inputs = tokenizer(texts, padding=True, truncation=True, return_tensors='pt', max_length=512)
+    
+    # Generate embeddings
+    with torch.no_grad():
+        outputs = model(**inputs)
+        # Use mean pooling of last hidden state
+        embeddings = outputs.last_hidden_state.mean(dim=1)
+    
+    return embeddings.numpy()
 
 # Initialize MCP server
 # Why "SDLC Docs Server": Descriptive name shown to MCP clients
@@ -98,7 +127,7 @@ def pqsoft_search_docs(search_phrase: str, limit: int = 10) -> List[Dict]:
     
     # Generate embedding for search query
     # Why same model: Must match document embeddings for meaningful comparison
-    query_embedding = get_model().encode(search_phrase)
+    query_embedding = encode_text(search_phrase)[0]
     
     # Use DuckDB's native vector similarity function
     # Why array_cosine_similarity: Built-in, optimized C++ implementation

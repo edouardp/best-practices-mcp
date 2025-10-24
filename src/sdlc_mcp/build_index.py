@@ -20,7 +20,8 @@ from typing import List, Dict
 
 import duckdb
 import numpy as np
-from sentence_transformers import SentenceTransformer
+import torch
+from transformers import AutoTokenizer, AutoModel
 
 # Configuration constants
 CHUNK_SIZE = 150
@@ -146,6 +147,33 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap_lines: int = OVE
     return chunks
 
 
+def encode_text(model, tokenizer, texts):
+    """
+    Generate embeddings using direct transformers model.
+    
+    Args:
+        model: AutoModel instance
+        tokenizer: AutoTokenizer instance  
+        texts: String or list of strings to encode
+    
+    Returns:
+        numpy array of embeddings
+    """
+    if isinstance(texts, str):
+        texts = [texts]
+    
+    # Tokenize input
+    inputs = tokenizer(texts, padding=True, truncation=True, return_tensors='pt', max_length=512)
+    
+    # Generate embeddings
+    with torch.no_grad():
+        outputs = model(**inputs)
+        # Use mean pooling of last hidden state
+        embeddings = outputs.last_hidden_state.mean(dim=1)
+    
+    return embeddings.numpy()
+
+
 def process_markdown_files() -> None:
     """
     Process all markdown files in docs/ directory and build vector database.
@@ -178,7 +206,8 @@ def process_markdown_files() -> None:
     # Why all-mpnet-base-v2: Higher quality 768-dim embeddings for better search results
     # Why load once: Model loading is expensive, reuse for all documents
     print("Loading embedding model...")
-    model = SentenceTransformer(EMBEDDING_MODEL)
+    tokenizer = AutoTokenizer.from_pretrained(EMBEDDING_MODEL)
+    model = AutoModel.from_pretrained(EMBEDDING_MODEL)
     
     # Initialize database
     # Why DuckDB: Embedded database with native vector support, no separate server needed
@@ -234,7 +263,7 @@ def process_markdown_files() -> None:
             # Generate embedding for this chunk
             # Why encode each chunk: Provides more precise search than whole-document embeddings
             # Returns numpy array of shape (768,)
-            embedding = model.encode(chunk_text_content)
+            embedding = encode_text(model, tokenizer, chunk_text_content)[0]
             
             # Insert into database
             # Why tolist(): DuckDB expects Python list, not numpy array
