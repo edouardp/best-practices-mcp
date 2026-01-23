@@ -277,6 +277,18 @@ def process_markdown_files() -> None:
     
     # Commit and close
     # Why explicit close: Ensures database is properly flushed to disk
+    
+    # Create FTS index for BM25 search
+    # Why FTS: Enables lexical/keyword search alongside vector search
+    # Why after inserts: FTS index is built over existing data
+    print("Creating FTS index...")
+    conn.execute("INSTALL fts")
+    conn.execute("LOAD fts")
+    conn.execute("""
+        PRAGMA create_fts_index('documents', 'id', 'content', 
+            stemmer='english', stopwords='english', overwrite=1)
+    """)
+    
     conn.close()
     print(f"Indexed {doc_id} document chunks")
 

@@ -262,6 +262,15 @@ def process_markdown_files() -> None:
             
             doc_id += 1
     
+    # Create FTS index for BM25 search
+    print("Creating FTS index...")
+    conn.execute("INSTALL fts")
+    conn.execute("LOAD fts")
+    conn.execute("""
+        PRAGMA create_fts_index('documents', 'id', 'content', 
+            stemmer='english', stopwords='english', overwrite=1)
+    """)
+    
     # Commit and close
     # Why explicit close: Ensures database is properly flushed to disk
     conn.close()
