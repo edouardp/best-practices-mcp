@@ -124,6 +124,44 @@ Or for Podman:
 }
 ```
 
+## Local Development (without Docker)
+
+### Prerequisites
+
+Install [uv](https://docs.astral.sh/uv/):
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### Running Locally
+
+```bash
+./run.sh
+```
+
+The script automatically:
+- Installs dependencies via `uv sync`
+- Builds/rebuilds the index if `docs/` files are newer than `sdlc_docs.db`
+- Starts the MCP server
+
+### Use with Q CLI (Local Mode)
+
+Add to your MCP configuration (`~/.aws/amazonq/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "sdlc-docs": {
+      "command": "/absolute/path/to/best-practices-mcp/run.sh"
+    }
+  }
+}
+```
+
+Replace `/absolute/path/to/best-practices-mcp/` with your actual project path.
+
+**Note:** The database automatically rebuilds when documentation files change, ensuring search results stay current.
+
 ## Adding Your Own Documentation
 
 1. **Place markdown files in `docs/` directory**
