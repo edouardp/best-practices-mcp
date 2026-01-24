@@ -12,18 +12,27 @@ def load_config():
         return json.load(f)
 
 def sync_docs(config):
-    s3 = boto3.client('s3', region_name=config['region'])
+    import subprocess
+    
     bucket = config['bucket_name']
     docs_dir = Path(__file__).parent.parent.parent / 'docs'
     
     print(f"Syncing documents from {docs_dir} to s3://{bucket}/")
     
-    for md_file in docs_dir.rglob('*.md'):
-        key = str(md_file.relative_to(docs_dir))
-        print(f"  Uploading {key}...")
-        s3.upload_file(str(md_file), bucket, key)
+    # Use AWS CLI sync for efficient uploads (only changed files)
+    result = subprocess.run(
+        ['aws', 's3', 'sync', str(docs_dir), f"s3://{bucket}/", 
+         '--exclude', '*', '--include', '*.md', '--delete'],
+        capture_output=True,
+        text=True
+    )
     
-    print("Upload complete!")
+    if result.returncode != 0:
+        print(f"Error syncing to S3: {result.stderr}")
+        sys.exit(1)
+    
+    print(result.stdout)
+    print("Sync complete!")
 
 def start_ingestion(config):
     bedrock = boto3.client('bedrock-agent', region_name=config['region'])
