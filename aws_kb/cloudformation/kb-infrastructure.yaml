@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Knowledge Base with S3 Vectors for SDLC Documentation MCP Server'
+
+Parameters:
+  KnowledgeBaseName:
+    Type: String
+    Default: 'sdlc-docs-kb'
+    Description: 'Name for the Knowledge Base'
+  
+  VectorBucketName:
+    Type: String
+    Default: 'sdlc-docs-vectors'
+    Description: 'Name of the pre-created S3 vector bucket'
+  
+  RerankerModelId:
+    Type: String
+    Default: 'cohere.rerank-v3-5:0'
+    AllowedValues:
+      - 'cohere.rerank-v3-5:0'
+      - 'amazon.rerank-v1:0'
+    Description: 'Bedrock reranker model ID'
+  
+  EmbeddingModelId:
+    Type: String
+    Default: 'amazon.titan-embed-text-v2:0'
+    Description: 'Bedrock embedding model ID'
+
+Resources:
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${KnowledgeBaseName}-docs-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  KnowledgeBaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${KnowledgeBaseName}-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonBedrockFullAccess'
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:ListBucket'
+                Resource:
+                  - !GetAtt DocumentsBucket.Arn
+                  - !Sub '${DocumentsBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - 's3vectors:*'
+                Resource:
+                  - !Sub 'arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/${VectorBucketName}'
+                  - !Sub 'arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/${VectorBucketName}/*'
+
+  KnowledgeBase:
+    Type: AWS::Bedrock::KnowledgeBase
+    Properties:
+      Name: !Ref KnowledgeBaseName
+      Description: 'Knowledge Base for SDLC documentation with S3 Vectors'
+      RoleArn: !GetAtt KnowledgeBaseRole.Arn
+      KnowledgeBaseConfiguration:
+        Type: VECTOR
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${EmbeddingModelId}'
+      StorageConfiguration:
+        Type: S3_VECTORS
+        S3VectorsConfiguration:
+          VectorBucketArn: !Sub 'arn:aws:s3vectors:${AWS::Region}:${AWS::AccountId}:bucket/${VectorBucketName}'
+          IndexName: !Sub '${KnowledgeBaseName}-index'
+
+  DataSource:
+    Type: AWS::Bedrock::DataSource
+    Properties:
+      Name: !Sub '${KnowledgeBaseName}-s3-source'
+      KnowledgeBaseId: !Ref KnowledgeBase
+      DataSourceConfiguration:
+        Type: S3
+        S3Configuration:
+          BucketArn: !GetAtt DocumentsBucket.Arn
+
+Outputs:
+  BucketName:
+    Description: 'S3 bucket name for documents'
+    Value: !Ref DocumentsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+  
+  VectorBucketName:
+    Description: 'S3 vector bucket name'
+    Value: !Ref VectorBucketName
+    Export:
+      Name: !Sub '${AWS::StackName}-VectorBucketName'
+  
+  KnowledgeBaseId:
+    Description: 'Knowledge Base ID'
+    Value: !Ref KnowledgeBase
+    Export:
+      Name: !Sub '${AWS::StackName}-KnowledgeBaseId'
+  
+  DataSourceId:
+    Description: 'Data Source ID'
+    Value: !Ref DataSource
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSourceId'
+  
+  RerankerModelArn:
+    Description: 'Reranker model ARN'
+    Value: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${RerankerModelId}'
+    Export:
+      Name: !Sub '${AWS::StackName}-RerankerModelArn'
+  
+  Region:
+    Description: 'AWS Region'
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub '${AWS::StackName}-Region'
