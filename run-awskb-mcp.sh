@@ -19,7 +19,7 @@ SYNC_MARKER=".last_sync"
 
 if [ ! -f "$SYNC_MARKER" ] || [ "$DOCS_DIR" -nt "$SYNC_MARKER" ]; then
     echo "Docs changed, syncing to Knowledge Base..."
-    uv run python scripts/sync_docs.py
+    ./scripts/sync_docs.sh
     touch "$SYNC_MARKER"
 fi
 
