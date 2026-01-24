@@ -21,7 +21,7 @@ fi
 
 if [ "$NEEDS_REBUILD" = true ]; then
     echo "Building index..." >&2
-    uv run python build_index.py
+    uv run python src_mcp/build_index.py
 fi
 
-uv run python server.py
+uv run python src_mcp/server.py
