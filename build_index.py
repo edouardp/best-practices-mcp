@@ -200,11 +200,13 @@ def process_markdown_files() -> None:
     # Why DuckDB: Embedded database with native vector support, no separate server needed
     conn = duckdb.connect('sdlc_docs.db')
     
+    # Drop existing table to rebuild from scratch
+    conn.execute("DROP TABLE IF EXISTS documents")
+    
     # Create table with vector column
-    # Why IF NOT EXISTS: Allows script to be re-run safely
     # Why FLOAT[768]: Fixed-size array for efficient vector operations (768-dim embeddings)
     conn.execute(f"""
-        CREATE TABLE IF NOT EXISTS documents (
+        CREATE TABLE documents (
             id INTEGER PRIMARY KEY,
             title TEXT,
             filename TEXT,

@@ -193,11 +193,14 @@ protected against regressions. The 90% threshold balances thoroughness with
 practicality. Focusing on src/ directory excludes test code from coverage
 calculations.
 
-### pre-commit: run ruff, mypy (fast), markdownlint, yaml-lint
+### pre-commit: run ruff, mypy (fast), markdownlint, yaml-lint; use rumdl for markdown
 
 **Why:** Pre-commit hooks catch issues before they reach CI, saving time and
 preventing broken builds. Running fast checks locally provides immediate
-feedback. Including documentation linting ensures consistent documentation
+feedback. Including documentation linting ensures consistent documentation. For
+Python projects, use `uvx rumdl check .` to lint markdown files without
+additional dependencies—rumdl is fast, opinionated, and integrates seamlessly
+with uv-based workflows
 quality.
 
 `pyproject.toml` sketch:

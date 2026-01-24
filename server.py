@@ -7,12 +7,13 @@ Hybrid search architecture:
 2. Vector (semantic) - conceptual similarity via embeddings  
 3. Reranker (cross-encoder) - precise relevance scoring
 
-All models loaded at startup for consistent query latency.
+All models loaded at startup in parallel for faster initialization.
 """
 
 import sys
 from pathlib import Path
 from typing import List, Dict
+from concurrent.futures import ThreadPoolExecutor
 
 import duckdb
 import numpy as np
@@ -28,12 +29,22 @@ CANDIDATE_LIMIT = 30  # Top N from each retrieval method
 # Initialize MCP server
 mcp = FastMCP("SDLC Docs Server")
 
-# Load models at startup
-print("Loading embedding model...", file=sys.stderr)
-embedding_model = SentenceTransformer(EMBEDDING_MODEL)
+# Load models in parallel at startup
+print("Loading models...", file=sys.stderr)
 
-print("Loading reranker model...", file=sys.stderr)
-reranker = CrossEncoder(RERANKER_MODEL)
+def load_embedding_model():
+    return SentenceTransformer(EMBEDDING_MODEL)
+
+def load_reranker_model():
+    return CrossEncoder(RERANKER_MODEL)
+
+with ThreadPoolExecutor(max_workers=2) as executor:
+    embedding_future = executor.submit(load_embedding_model)
+    reranker_future = executor.submit(load_reranker_model)
+    embedding_model = embedding_future.result()
+    reranker = reranker_future.result()
+
+print("Models loaded.", file=sys.stderr)
 
 # Connect to database
 conn = duckdb.connect('sdlc_docs.db', read_only=True)

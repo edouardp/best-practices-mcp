@@ -285,7 +285,7 @@ docker build -t best-practices-mcp . 2>&1 | less
 docker run --rm best-practices-mcp ls -lh sdlc_docs.db
 
 # Check number of indexed chunks
-docker run --rm best-practices-mcp python -c "import duckdb; print(duckdb.connect('sdlc_docs.db').execute('SELECT COUNT(*) FROM documents').fetchone())"
+docker run --rm best-practices-mcp python -c "import duckdb; print(duckdb.connect('sdlc_docs.db', read_only=True).execute('SELECT COUNT(*) FROM documents').fetchone())"
 ```
 
 ### Path traversal errors

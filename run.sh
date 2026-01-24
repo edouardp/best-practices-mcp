@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+cd "$(dirname "$0")"
+
 uv sync --quiet
 
 DB_FILE="sdlc_docs.db"
