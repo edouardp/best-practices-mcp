@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/src_mcp"
 
 uv sync --quiet
 
@@ -11,7 +11,7 @@ NEEDS_REBUILD=false
 if [ ! -f "$DB_FILE" ]; then
     NEEDS_REBUILD=true
 else
-    NEWEST_DOC=$(find docs -type f -name "*.md" -exec stat -f "%m %N" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+    NEWEST_DOC=$(find ../docs -type f -name "*.md" -exec stat -f "%m %N" {} \; 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
     if [ -n "$NEWEST_DOC" ]; then
         if [ "$NEWEST_DOC" -nt "$DB_FILE" ]; then
             NEEDS_REBUILD=true
@@ -21,7 +21,7 @@ fi
 
 if [ "$NEEDS_REBUILD" = true ]; then
     echo "Building index..." >&2
-    uv run python src_mcp/build_index.py
+    uv run python build_index.py
 fi
 
-uv run python src_mcp/server.py
+uv run python server.py

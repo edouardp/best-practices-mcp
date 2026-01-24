@@ -182,7 +182,7 @@ def process_markdown_files() -> None:
     
     Why FLOAT[768]: all-mpnet-base-v2 produces 768-dimensional embeddings
     """
-    docs_dir = Path("docs")
+    docs_dir = Path("../docs")
     
     # Create sample docs if none exist
     # Why: Provides working example out of the box for testing
@@ -222,12 +222,13 @@ def process_markdown_files() -> None:
     # Process all markdown files recursively
     # Why **/*.md: Supports nested directory structure
     for md_file in docs_dir.glob("**/*.md"):
-        # Skip files in hidden directories (starting with .)
+        # Skip files in hidden directories (starting with . but not ..)
         # Why: Prevents indexing .git, .vscode, etc.
-        if any(part.startswith('.') for part in md_file.parts):
+        relative_path = md_file.relative_to(docs_dir)
+        if any(part.startswith('.') and part != '..' for part in relative_path.parts):
             continue
             
-        relative_path = str(md_file.relative_to(docs_dir))
+        relative_path = str(relative_path)
         print(f"Processing {relative_path}")
         
         # Read file content
@@ -290,7 +291,7 @@ def create_sample_docs() -> None:
     
     Content choice: Representative SDLC topics that demonstrate search capabilities
     """
-    docs_dir = Path("docs")
+    docs_dir = Path("../docs")
     docs_dir.mkdir(exist_ok=True)
     
     # Sample documents covering common SDLC topics
