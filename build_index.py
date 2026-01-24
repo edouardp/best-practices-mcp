@@ -200,11 +200,13 @@ def process_markdown_files() -> None:
     # Why DuckDB: Embedded database with native vector support, no separate server needed
     conn = duckdb.connect('sdlc_docs.db')
     
+    # Drop existing table to rebuild from scratch
+    conn.execute("DROP TABLE IF EXISTS documents")
+    
     # Create table with vector column
-    # Why IF NOT EXISTS: Allows script to be re-run safely
     # Why FLOAT[768]: Fixed-size array for efficient vector operations (768-dim embeddings)
     conn.execute(f"""
-        CREATE TABLE IF NOT EXISTS documents (
+        CREATE TABLE documents (
             id INTEGER PRIMARY KEY,
             title TEXT,
             filename TEXT,
@@ -261,6 +263,15 @@ def process_markdown_files() -> None:
                   chunk_info['end_line'], chunk_text_content, embedding.tolist()))
             
             doc_id += 1
+    
+    # Create FTS index for BM25 search
+    print("Creating FTS index...")
+    conn.execute("INSTALL fts")
+    conn.execute("LOAD fts")
+    conn.execute("""
+        PRAGMA create_fts_index('documents', 'id', 'content', 
+            stemmer='english', stopwords='english', overwrite=1)
+    """)
     
     # Commit and close
     # Why explicit close: Ensures database is properly flushed to disk

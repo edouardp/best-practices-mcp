@@ -15,8 +15,8 @@ COPY pyproject.toml uv.lock ./
 RUN pip install uv && \
     uv sync --frozen --no-dev
 
-# Pre-download embedding model to cache
-RUN .venv/bin/python -c "from transformers import AutoTokenizer, AutoModel; AutoTokenizer.from_pretrained('sentence-transformers/all-mpnet-base-v2'); AutoModel.from_pretrained('sentence-transformers/all-mpnet-base-v2')"
+-# Pre-download embedding model to cache
+-RUN .venv/bin/python -c "from transformers import AutoTokenizer, AutoModel; AutoTokenizer.from_pretrained('sentence-transformers/all-mpnet-base-v2'); AutoModel.from_pretrained('sentence-transformers/all-mpnet-base-v2')"
 
 # Copy source and docs
 COPY src/ src/

@@ -1,36 +1,45 @@
 # SDLC Best Practices MCP Server
 
-A self-contained Model Context Protocol (MCP) server that provides semantic search and document reading capabilities for SDLC documentation using local embeddings.
+A self-contained Model Context Protocol (MCP) server that provides hybrid search and document reading capabilities for SDLC documentation using local embeddings and reranking.
 
 ## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Build Time (Docker)                      │
+│                     Build Time                               │
 ├─────────────────────────────────────────────────────────────┤
-│  docs/*.md → build_index.py → embeddings → sdlc_docs.db    │
+│  docs/*.md → build_index.py → sdlc_docs.db                 │
 │  • Chunks documents with heading context                    │
 │  • Generates 768-dim vectors (all-mpnet-base-v2)           │
+│  • Creates BM25 full-text search index                      │
 │  • Stores in DuckDB with metadata                           │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                    Runtime (Container)                       │
+│                    Runtime (Query)                           │
 ├─────────────────────────────────────────────────────────────┤
-│  server.py (FastMCP) ← stdio ← MCP Client (Q CLI)          │
-│  • pqsoft_search_docs: Semantic vector search             │
-│  • pqsoft_read_docs: Precise line-range reading           │
-│  • pqsoft_recommend_docs: Content-based recommendations   │
+│  Query → Hybrid Retrieval → Reranker → Results             │
+│                                                             │
+│  Stage 1: Parallel Retrieval                                │
+│    • BM25 search (exact keywords) → top 30                 │
+│    • Vector search (semantic) → top 30                     │
+│                                                             │
+│  Stage 2: Union + Deduplicate                               │
+│    • Merge results by chunk ID                              │
+│                                                             │
+│  Stage 3: Cross-Encoder Reranking                           │
+│    • ms-marco-MiniLM-L-6-v2 scores (query, doc) pairs      │
+│    • Return top K by relevance                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Key Features
 
-### 🔍 Semantic Search
-- **Local embeddings**: No network calls, fully self-contained
-- **Contextual chunking**: Includes heading hierarchy for better results
-- **Overlap strategy**: 2-line overlap prevents information loss
-- **Cosine similarity**: Standard vector comparison metric
+### 🔍 Hybrid Search
+- **BM25 (lexical)**: Exact keyword matching for technical terms, IDs, error codes
+- **Vector (semantic)**: Conceptual similarity for natural language queries
+- **Cross-encoder reranking**: Precise relevance scoring on combined candidates
+- **Local models**: No network calls, fully self-contained
 
 ### 📖 Precise Reading
 - **Line-range access**: Read exact sections from source files
@@ -46,7 +55,7 @@ A self-contained Model Context Protocol (MCP) server that provides semantic sear
 ## Tools Available
 
 ### `pqsoft_search_docs(search_phrase: str, limit: int) -> list[dict]`
-Semantic search across all documentation.
+Hybrid search across all documentation using BM25 + vectors + reranking.
 
 **Returns:**
 ```python
@@ -276,7 +285,7 @@ docker build -t best-practices-mcp . 2>&1 | less
 docker run --rm best-practices-mcp ls -lh sdlc_docs.db
 
 # Check number of indexed chunks
-docker run --rm best-practices-mcp python -c "import duckdb; print(duckdb.connect('sdlc_docs.db').execute('SELECT COUNT(*) FROM documents').fetchone())"
+docker run --rm best-practices-mcp python -c "import duckdb; print(duckdb.connect('sdlc_docs.db', read_only=True).execute('SELECT COUNT(*) FROM documents').fetchone())"
 ```
 
 ### Path traversal errors
