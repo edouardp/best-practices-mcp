@@ -1,8 +1,33 @@
-# SDLC Best Practices MCP Server
+# SDLC Best Practices MCP Servers
 
-A self-contained Model Context Protocol (MCP) server that provides hybrid search and document reading capabilities for SDLC documentation using local embeddings and reranking.
+Two Model Context Protocol (MCP) servers providing search and document reading capabilities for SDLC documentation:
 
-## Architecture Overview
+1. **Local MCP Server** (`src_mcp/`) - Self-contained with local embeddings and reranking
+2. **AWS Knowledge Base MCP Server** (`aws_kb/`) - Cloud-native using AWS Bedrock and S3 Vectors
+
+## Quick Start
+
+### Local MCP Server (Recommended for Development)
+```bash
+./run-local-mcp.sh
+```
+- ✅ Zero cost, runs locally
+- ✅ Fast (<200ms queries)
+- ✅ No AWS account needed
+- ✅ Hybrid search with reranking
+
+### AWS Knowledge Base MCP Server (Production)
+```bash
+./run-awskb-mcp.sh
+```
+- ✅ Scalable, managed infrastructure
+- ✅ S3 Vectors (90% cost reduction)
+- ✅ Auto-syncs docs when changed
+- ⚠️ Requires AWS account (~$1-2/month)
+
+## Architecture Comparison
+
+### Local MCP Server (`src_mcp/`)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -33,13 +58,35 @@ A self-contained Model Context Protocol (MCP) server that provides hybrid search
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### AWS Knowledge Base MCP Server (`aws_kb/`)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   Infrastructure                             │
+├─────────────────────────────────────────────────────────────┤
+│  docs/*.md → S3 Bucket → Knowledge Base                    │
+│  • Titan Embeddings v2 (1024-dim)                          │
+│  • S3 Vectors for storage                                   │
+│  • Fixed-size chunking (200 tokens)                         │
+│  • Auto-ingestion on sync                                   │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    Runtime (Query)                           │
+├─────────────────────────────────────────────────────────────┤
+│  Query → Knowledge Base Retrieve API → Results             │
+│  • Vector search with cosine similarity                     │
+│  • Reranking not available in ap-southeast-2               │
+│  • Documents read directly from S3                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
 ## Key Features
 
-### 🔍 Hybrid Search
-- **BM25 (lexical)**: Exact keyword matching for technical terms, IDs, error codes
-- **Vector (semantic)**: Conceptual similarity for natural language queries
-- **Cross-encoder reranking**: Precise relevance scoring on combined candidates
-- **Local models**: No network calls, fully self-contained
+### 🔍 Hybrid Search (Local) / Vector Search (AWS)
+- **Local**: BM25 + Vector + Cross-encoder reranking
+- **AWS**: Vector search with Titan Embeddings
+- **Both**: Semantic similarity for natural language queries
 
 ### 📖 Precise Reading
 - **Line-range access**: Read exact sections from source files
@@ -47,7 +94,7 @@ A self-contained Model Context Protocol (MCP) server that provides hybrid search
 - **Metadata tracking**: Filename and line numbers for every chunk
 
 ### 🔒 Security
-- Read-only database access
+- Read-only database/S3 access
 - Path traversal prevention
 - File type restrictions (.md only)
 - Hidden file blocking (no .env, .git, etc.)
@@ -83,22 +130,40 @@ Get related documentation based on content similarity.
 
 ## Development & Testing
 
-### 1. Build and Test
+### Local MCP Server
 
 ```bash
-# Run proof of concept test
-./proof_test.sh
+# Run the server
+./run-local-mcp.sh
 
-# Or build manually
-docker build -t best-practices-mcp .
-# OR
-podman build -t best-practices-mcp .
+# Test search
+cd src_mcp
+python3 mcp_search.py "testing strategies"
 ```
+
+### AWS Knowledge Base MCP Server
+
+```bash
+# Deploy infrastructure (one-time setup)
+cd aws_kb/scripts
+./deploy_stack.sh
+
+# Create vector bucket and index (one-time setup)
+uv run create_vector_bucket.py
+uv run create_vector_index.py
+
+# Sync documents and run server
+cd ../..
+./run-awskb-mcp.sh
+```
+
+See `aws_kb/README.md` and `aws_kb/QUICKSTART.md` for detailed AWS setup instructions.
 
 ### 2. Test Search Functionality
 
 ```bash
-# Using Python MCP client
+# Local MCP
+cd src_mcp
 python3 mcp_search.py "testing strategies"
 python3 mcp_search.py "deployment best practices"
 
@@ -110,30 +175,34 @@ python3 test_read.py "04-testing-strategies.md" 1 50
 
 Add to your MCP configuration (`~/.aws/amazonq/mcp.json`):
 
+**Local MCP Server:**
 ```json
 {
   "mcpServers": {
-    "sdlc-docs": {
-      "command": "docker",
-      "args": ["run", "--read-only", "-i", "best-practices-mcp"]
+    "sdlc-docs-local": {
+      "command": "/absolute/path/to/best-practices-mcp/run-local-mcp.sh"
     }
   }
 }
 ```
 
-Or for Podman:
+**AWS Knowledge Base MCP Server:**
 ```json
 {
   "mcpServers": {
-    "sdlc-docs": {
-      "command": "podman",
-      "args": ["run", "--read-only", "-i", "best-practices-mcp"]
+    "sdlc-docs-aws": {
+      "command": "/absolute/path/to/best-practices-mcp/run-awskb-mcp.sh",
+      "env": {
+        "AWS_PROFILE": "your-profile-name"
+      }
     }
   }
 }
 ```
 
-## Local Development (without Docker)
+Replace `/absolute/path/to/best-practices-mcp/` with your actual project path.
+
+## Local Development
 
 ### Prerequisites
 
@@ -144,8 +213,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### Running Locally
 
+**Local MCP Server:**
 ```bash
-./run.sh
+./run-local-mcp.sh
 ```
 
 The script automatically:
@@ -153,23 +223,17 @@ The script automatically:
 - Builds/rebuilds the index if `docs/` files are newer than `sdlc_docs.db`
 - Starts the MCP server
 
-### Use with Q CLI (Local Mode)
-
-Add to your MCP configuration (`~/.aws/amazonq/mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "sdlc-docs": {
-      "command": "/absolute/path/to/best-practices-mcp/run.sh"
-    }
-  }
-}
+**AWS Knowledge Base MCP Server:**
+```bash
+./run-awskb-mcp.sh
 ```
 
-Replace `/absolute/path/to/best-practices-mcp/` with your actual project path.
+The script automatically:
+- Installs dependencies via `uv sync`
+- Syncs docs to S3 if changed
+- Starts the MCP server
 
-**Note:** The database automatically rebuilds when documentation files change, ensuring search results stay current.
+**Note:** Both servers automatically rebuild/resync when documentation files change, ensuring search results stay current.
 
 ## Adding Your Own Documentation
 
@@ -184,56 +248,52 @@ Replace `/absolute/path/to/best-practices-mcp/` with your actual project path.
        └── integration-tests.md
    ```
 
-2. **Rebuild the container**
-   ```bash
-   docker-compose up --build
-   # OR
-   podman-compose up --build
-   ```
+2. **Restart the MCP server**
+   - Local: `./run-local-mcp.sh` (auto-rebuilds index)
+   - AWS: `./run-awskb-mcp.sh` (auto-syncs to S3)
 
 3. **Documentation is automatically indexed**
    - Chunks created with heading context
    - Embeddings generated
-   - Database updated
+   - Database/Knowledge Base updated
 
 ## Directory Structure
 
 ```
-├── Dockerfile                  # Multi-stage build with embedding generation
-├── docker-compose.yml          # Compose configuration (Docker/Podman)
-├── requirements.txt            # Python dependencies
-├── build_index.py             # Indexing script (runs at build time)
-├── server.py                  # MCP server (runs at runtime)
-├── mcp_search.py              # Python MCP client for testing
-├── test_read.py               # Test script for pqsoft_read_docs
+├── run-local-mcp.sh           # Start local MCP server
+├── run-awskb-mcp.sh           # Start AWS KB MCP server
+├── src_mcp/                   # Local MCP implementation
+│   ├── server.py              # FastMCP server
+│   ├── build_index.py         # Index builder
+│   ├── pyproject.toml         # Dependencies
+│   └── sdlc_docs.db           # Vector database (generated)
+├── aws_kb/                    # AWS Knowledge Base implementation
+│   ├── server.py              # FastMCP server
+│   ├── cloudformation/        # Infrastructure as code
+│   ├── scripts/               # Deployment and sync scripts
+│   ├── tests/                 # Test scripts
+│   ├── README.md              # Detailed AWS setup guide
+│   ├── QUICKSTART.md          # Quick start guide
+│   ├── IMPLEMENTATION.md      # Implementation details
+│   └── CODE_REVIEW.md         # Code review and improvements
 ├── docs/                      # Your markdown documentation
 │   └── *.md
-├── detect_container.sh        # Auto-detect Docker/Podman
-├── proof_test.sh             # Validation test script
-└── sdlc_docs.db              # Generated vector database (in container)
+└── README.md                  # This file
 ```
-
-## Container Runtime Support
-
-All scripts automatically detect and use either Docker or Podman:
-- `proof_test.sh` - Validates core functionality
-- `mcp_search.py` - Auto-detects runtime
-- `test_read.py` - Auto-detects runtime
-- `docker-compose.yml` - Works with both docker-compose and podman-compose
 
 ## Technical Details
 
-### Embedding Model
-- **Model**: `sentence-transformers/all-mpnet-base-v2`
-- **Dimensions**: 768
-- **Why**: Higher quality embeddings for better semantic search results
-- **License**: Apache 2.0
+### Local MCP Server
+- **Embedding Model**: sentence-transformers/all-mpnet-base-v2 (768-dim)
+- **Database**: DuckDB (embedded, read-only at runtime)
+- **Search**: BM25 + Vector + Cross-encoder reranking
+- **Size**: ~1-5MB database for typical documentation sets
 
-### Database
-- **Engine**: DuckDB (embedded)
-- **Schema**: id, title, filename, start_line, end_line, content, embedding
-- **Access**: Read-only at runtime
-- **Size**: ~1-5MB for typical documentation sets
+### AWS Knowledge Base MCP Server
+- **Embedding Model**: Amazon Titan Embeddings v2 (1024-dim)
+- **Vector Store**: S3 Vectors (90% cost reduction vs traditional DBs)
+- **Search**: Vector search with cosine similarity
+- **Infrastructure**: CloudFormation-managed, fully serverless
 
 ### Chunking Strategy
 - **Size**: ~300 words per chunk
@@ -291,36 +351,68 @@ docker run --rm best-practices-mcp python -c "import duckdb; print(duckdb.connec
 ### Path traversal errors
 - Ensure paths are relative to docs/ directory
 - Don't use `..` in paths
-- Only .md files are accessible
+## Customization
 
-## Development
-
-### Running Tests
-```bash
-# Validate structure
-python3 validate_structure.py
-
-# Test MCP protocol
-./proof_test.sh
-
-# Test search
-python3 mcp_search.py "test query"
-
-# Test reading
-python3 test_read.py "file.md" 1 10
+### Adjust Chunk Size
+Edit `src_mcp/build_index.py`:
+```python
+chunks = chunk_text(content, chunk_size=400, overlap_lines=3)
 ```
 
-### Debugging
-```bash
-# Exec into running container
-docker exec -it <container_id> /bin/bash
-
-# Check database
-python3 -c "import duckdb; conn = duckdb.connect('sdlc_docs.db', read_only=True); print(conn.execute('SELECT COUNT(*) FROM documents').fetchone())"
-
-# View indexed files
-python3 -c "import duckdb; conn = duckdb.connect('sdlc_docs.db', read_only=True); print(conn.execute('SELECT DISTINCT filename FROM documents').fetchall())"
+### Change Embedding Model
+Edit both `src_mcp/build_index.py` and `src_mcp/server.py`:
+```python
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+# Update embedding dimension in CREATE TABLE statement
 ```
+
+### Modify Search Limit
+Default is 10 results, max 50. Adjust in tool call:
+```python
+pqsoft_search_docs("query", limit=20)
+```
+
+## Troubleshooting
+
+### Local MCP Server
+```bash
+# Check if database exists
+ls -lh src_mcp/sdlc_docs.db
+
+# Rebuild index
+cd src_mcp && uv run python build_index.py
+
+# Check indexed documents
+cd src_mcp && python3 -c "import duckdb; conn = duckdb.connect('sdlc_docs.db', read_only=True); print(conn.execute('SELECT DISTINCT filename FROM documents').fetchall())"
+```
+
+### AWS Knowledge Base MCP Server
+```bash
+# Check config
+cat aws_kb/config.json
+
+# Manually sync docs
+cd aws_kb && uv run python scripts/sync_docs.py
+
+# Check ingestion status
+aws bedrock-agent list-ingestion-jobs --knowledge-base-id <KB_ID> --data-source-id <DS_ID> --region ap-southeast-2
+```
+
+See `aws_kb/README.md` for detailed AWS troubleshooting.
+
+## Comparison: Local vs AWS
+
+| Feature | Local (src_mcp) | AWS (aws_kb) |
+|---------|----------------|--------------|
+| Cost | $0 | ~$1-2/month |
+| Setup | 2 min | 10 min |
+| Latency | <200ms | ~500ms |
+| Scalability | Limited | Unlimited |
+| Maintenance | Manual rebuild | Automatic |
+| Dependencies | sentence-transformers, DuckDB | boto3 only |
+| Vector Store | DuckDB | S3 Vectors |
+| Embeddings | all-mpnet-base-v2 | Titan |
+| Reranking | ms-marco-MiniLM | Not available in ap-southeast-2 |
 
 ## License
 
@@ -329,15 +421,15 @@ This project is provided as-is for SDLC documentation purposes.
 ## Contributing
 
 1. Add your documentation to `docs/`
-2. Test with `./proof_test.sh`
-3. Verify search works: `python3 mcp_search.py "your topic"`
-4. Rebuild and deploy
+2. Test with local server: `./run-local-mcp.sh`
+3. Verify search works
+4. Commit and push
 
 ## Status
 
 ✅ **Production Ready**
 - All tests passing
 - Security hardened
-- Docker/Podman compatible
+- Two deployment options
 - MCP protocol compliant
 - Fully documented
