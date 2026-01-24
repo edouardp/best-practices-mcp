@@ -14,11 +14,19 @@ REGION=$(jq -r '.region' "$CONFIG_FILE")
 echo "Syncing documents from $DOCS_DIR to s3://$BUCKET_NAME/"
 
 # Sync only .md files, delete removed files
-aws s3 sync "$DOCS_DIR" "s3://$BUCKET_NAME/" \
+SYNC_OUTPUT=$(aws s3 sync "$DOCS_DIR" "s3://$BUCKET_NAME/" \
     --exclude '*' \
     --include '*.md' \
     --delete \
-    --region "$REGION"
+    --region "$REGION" 2>&1)
+
+echo "$SYNC_OUTPUT"
+
+# Check if any files were synced
+if [ -z "$SYNC_OUTPUT" ]; then
+    echo "No changes detected, skipping ingestion"
+    exit 0
+fi
 
 echo "Sync complete!"
 
