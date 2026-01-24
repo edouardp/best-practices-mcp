@@ -151,22 +151,40 @@ pqsoft_recommend_docs('Testing Strategies')
 
 ## Cost Considerations
 
-### S3 Vectors
+### S3 Vectors (Actual Implementation)
 - **Storage**: ~$0.023/GB/month (S3 Standard)
+  - Typical: ~1MB for 6 docs = **$0.00002/month**
+- **Vector Index**: No additional charge (stored in S3)
 - **Embeddings**: ~$0.0001 per 1K tokens (Titan)
-- **Typical**: <$1/month for small doc sets
+  - One-time cost for initial ingestion: ~$0.01
+  - Updates: ~$0.001 per doc change
+- **Queries**: ~$0.0001 per query (Titan embedding + retrieval)
+  - 1000 queries/month = **$0.10/month**
 
-### Reranking
-- **Cohere Rerank 3.5**: ~$0.002 per 1K tokens
-- **Amazon Rerank 1.0**: ~$0.0025 per 1K tokens
-- **Typical**: <$0.10/month for moderate usage
+### S3 Document Storage
+- **Storage**: ~$0.023/GB/month
+  - Typical: ~500KB for 6 docs = **$0.00001/month**
+- **Requests**: Negligible (GET requests ~$0.0004 per 1K)
 
-### OpenSearch Serverless
-- **OCU**: ~$0.24/hour per OCU
-- **Minimum**: 2 OCUs = ~$350/month
-- **Note**: Most expensive component
+### Reranking (Not Available in ap-southeast-2)
+- **Cohere Rerank 3.5**: ~$0.002 per 1K tokens (if available)
+- **Amazon Rerank 1.0**: ~$0.0025 per 1K tokens (if available)
+- **Current**: Not used, reranking unavailable in Sydney region
 
-**Total Estimated Cost**: ~$350-400/month
+### Total Estimated Cost
+- **Storage**: ~$0.00003/month (negligible)
+- **Initial Setup**: ~$0.01 (one-time)
+- **Monthly Usage** (1000 queries): ~$0.10/month
+- **With Updates** (10 docs/month): ~$0.11/month
+
+**Total: ~$0.10-0.20/month** for typical usage
+
+### Cost Comparison
+- **S3 Vectors**: ~$0.10/month (this implementation)
+- **OpenSearch Serverless**: ~$350/month (2 OCU minimum)
+- **Aurora Serverless**: ~$50/month (0.5 ACU minimum)
+
+**Savings: 99.97% vs OpenSearch, 99.8% vs Aurora**
 
 ## Configuration
 

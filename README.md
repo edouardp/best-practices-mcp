@@ -23,7 +23,7 @@ Two Model Context Protocol (MCP) servers providing search and document reading c
 - ✅ Scalable, managed infrastructure
 - ✅ S3 Vectors (90% cost reduction)
 - ✅ Auto-syncs docs when changed
-- ⚠️ Requires AWS account (~$1-2/month)
+- ⚠️ Requires AWS account (~$0.10-0.20/month)
 
 ## Architecture Comparison
 
@@ -31,29 +31,29 @@ Two Model Context Protocol (MCP) servers providing search and document reading c
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Build Time                               │
+│                     Build Time                              │
 ├─────────────────────────────────────────────────────────────┤
-│  docs/*.md → build_index.py → sdlc_docs.db                 │
+│  docs/*.md → build_index.py → sdlc_docs.db                  │
 │  • Chunks documents with heading context                    │
-│  • Generates 768-dim vectors (all-mpnet-base-v2)           │
+│  • Generates 768-dim vectors (all-mpnet-base-v2)            │
 │  • Creates BM25 full-text search index                      │
 │  • Stores in DuckDB with metadata                           │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                    Runtime (Query)                           │
+│                    Runtime (Query)                          │
 ├─────────────────────────────────────────────────────────────┤
-│  Query → Hybrid Retrieval → Reranker → Results             │
+│  Query → Hybrid Retrieval → Reranker → Results              │
 │                                                             │
 │  Stage 1: Parallel Retrieval                                │
-│    • BM25 search (exact keywords) → top 30                 │
-│    • Vector search (semantic) → top 30                     │
+│    • BM25 search (exact keywords) → top 30                  │
+│    • Vector search (semantic) → top 30                      │
 │                                                             │
 │  Stage 2: Union + Deduplicate                               │
 │    • Merge results by chunk ID                              │
 │                                                             │
 │  Stage 3: Cross-Encoder Reranking                           │
-│    • ms-marco-MiniLM-L-6-v2 scores (query, doc) pairs      │
+│    • ms-marco-MiniLM-L-6-v2 scores (query, doc) pairs       │
 │    • Return top K by relevance                              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -62,21 +62,21 @@ Two Model Context Protocol (MCP) servers providing search and document reading c
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                   Infrastructure                             │
+│                   Infrastructure                            │
 ├─────────────────────────────────────────────────────────────┤
-│  docs/*.md → S3 Bucket → Knowledge Base                    │
-│  • Titan Embeddings v2 (1024-dim)                          │
+│  docs/*.md → S3 Bucket → Knowledge Base                     │
+│  • Titan Embeddings v2 (1024-dim)                           │
 │  • S3 Vectors for storage                                   │
 │  • Fixed-size chunking (200 tokens)                         │
 │  • Auto-ingestion on sync                                   │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                    Runtime (Query)                           │
+│                    Runtime (Query)                          │
 ├─────────────────────────────────────────────────────────────┤
-│  Query → Knowledge Base Retrieve API → Results             │
+│  Query → Knowledge Base Retrieve API → Results              │
 │  • Vector search with cosine similarity                     │
-│  • Reranking not available in ap-southeast-2               │
+│  • Reranking not available in ap-southeast-2                │
 │  • Documents read directly from S3                          │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -402,17 +402,17 @@ See `aws_kb/README.md` for detailed AWS troubleshooting.
 
 ## Comparison: Local vs AWS
 
-| Feature | Local (src_mcp) | AWS (aws_kb) |
-|---------|----------------|--------------|
-| Cost | $0 | ~$1-2/month |
-| Setup | 2 min | 10 min |
-| Latency | <200ms | ~500ms |
-| Scalability | Limited | Unlimited |
-| Maintenance | Manual rebuild | Automatic |
-| Dependencies | sentence-transformers, DuckDB | boto3 only |
-| Vector Store | DuckDB | S3 Vectors |
-| Embeddings | all-mpnet-base-v2 | Titan |
-| Reranking | ms-marco-MiniLM | Not available in ap-southeast-2 |
+| Feature      | Local (src_mcp)               | AWS (aws_kb)                    |
+| ------------ | ----------------------------- | ------------------------------- |
+| Cost         | $0                            | ~$0.10-0.20/month               |
+| Setup        | 2 min                         | 10 min                          |
+| Latency      | <200ms                        | ~500ms                          |
+| Scalability  | Limited                       | Unlimited                       |
+| Maintenance  | Manual rebuild                | Automatic                       |
+| Dependencies | sentence-transformers, DuckDB | boto3 only                      |
+| Vector Store | DuckDB                        | S3 Vectors                      |
+| Embeddings   | all-mpnet-base-v2             | Titan                           |
+| Reranking    | ms-marco-MiniLM               | Not available in ap-southeast-2 |
 
 ## License
 
