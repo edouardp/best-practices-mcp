@@ -21,7 +21,8 @@ from sentence_transformers import SentenceTransformer, CrossEncoder
 from fastmcp import FastMCP
 
 # Configuration
-EMBEDDING_MODEL = 'sentence-transformers/all-mpnet-base-v2'
+EMBEDDING_MODEL = 'sentence-transformers/all-distilroberta-v1'
+EMBEDDING_DIM = 768
 RERANKER_MODEL = 'cross-encoder/ms-marco-MiniLM-L-6-v2'
 MAX_SEARCH_LIMIT = 50
 CANDIDATE_LIMIT = 30  # Top N from each retrieval method
@@ -78,9 +79,9 @@ def vector_search(query: str, limit: int = CANDIDATE_LIMIT) -> List[Dict]:
     """Vector similarity search using embeddings."""
     query_embedding = embedding_model.encode(query)
     
-    results = conn.execute("""
+    results = conn.execute(f"""
         SELECT id, title, filename, start_line, end_line, content,
-               array_cosine_similarity(embedding, ?::FLOAT[768]) as similarity
+               array_cosine_similarity(embedding, ?::FLOAT[{EMBEDDING_DIM}]) as similarity
         FROM documents
         ORDER BY similarity DESC
         LIMIT ?
@@ -203,9 +204,9 @@ def pqsoft_recommend_docs(title: str) -> List[Dict]:
     
     current_content, current_embedding = current_results
     
-    results = conn.execute("""
+    results = conn.execute(f"""
         SELECT DISTINCT title, content,
-               array_cosine_similarity(embedding, ?::FLOAT[768]) as similarity
+               array_cosine_similarity(embedding, ?::FLOAT[{EMBEDDING_DIM}]) as similarity
         FROM documents 
         WHERE title NOT LIKE ?
         ORDER BY similarity DESC

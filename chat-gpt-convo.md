@@ -37,7 +37,7 @@ Yes. **all-MiniLM-L6-v2** is specifically designed to run well **locally**, incl
 
 ### Example: run locally in Python
 
-```
+```python
 from sentence_transformers import SentenceTransformer
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -59,13 +59,13 @@ This downloads once, then runs entirely offline.
 
 After the initial download:
 
-```
+```bash
 export HF_HUB_OFFLINE=1
 ```
 
 or cache the model explicitly:
 
-```
+```python
 SentenceTransformer(
     "all-MiniLM-L6-v2",
     cache_folder="./models"
@@ -83,7 +83,7 @@ For lower latency or embedding at scale:
 - 2–4× faster on CPU
 - Smaller memory footprint
 
-```
+```bash
 pip install optimum[onnxruntime]
 ```
 
@@ -167,7 +167,7 @@ DuckDB’s `fts` extension:
 
 ### 1) Schema + FTS index (chunk-level is usually best)
 
-```
+```python
 import duckdb
 
 con = duckdb.connect("rag.duckdb")
@@ -198,7 +198,7 @@ PRAGMA create_fts_index(
 
 ### 2) Query BM25
 
-```
+```python
 def bm25_search(con, query: str, k: int = 8):
     # The index schema is fts_<schema>_<table>. For main.chunks -> fts_main_chunks
     sql = """
@@ -239,7 +239,7 @@ Caveat: HNSW persistence is gated behind an **experimental flag**; the docs expl
 
 ### 1) Schema + HNSW index
 
-```
+```python
 import duckdb
 import numpy as np
 from sentence_transformers import SentenceTransformer

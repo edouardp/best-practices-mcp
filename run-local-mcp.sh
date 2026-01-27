@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")/src_mcp"
 
-uv sync --quiet
+uv sync --native-tls --quiet
 
 DB_FILE="sdlc_docs.db"
 NEEDS_REBUILD=false

@@ -26,7 +26,7 @@ from sentence_transformers import SentenceTransformer
 CHUNK_SIZE = 150
 OVERLAP_LINES = 5
 EMBEDDING_DIM = 768
-EMBEDDING_MODEL = 'sentence-transformers/all-mpnet-base-v2'
+EMBEDDING_MODEL = 'sentence-transformers/all-distilroberta-v1'
 MIN_CHUNK_LENGTH = 50
 
 
