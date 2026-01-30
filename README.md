@@ -220,7 +220,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 The script automatically:
 - Installs dependencies via `uv sync`
-- Builds/rebuilds the index if `docs/` files are newer than `sdlc_docs.db`
+- Incrementally updates the index (only processes new/modified/removed files)
 - Starts the MCP server
 
 **AWS Knowledge Base MCP Server:**
@@ -233,7 +233,7 @@ The script automatically:
 - Syncs docs to S3 if changed
 - Starts the MCP server
 
-**Note:** Both servers automatically rebuild/resync when documentation files change, ensuring search results stay current.
+**Note:** Both servers automatically update when documentation files change. The local server uses incremental updates (only processes changed files), while the AWS server syncs to S3.
 
 ## Adding Your Own Documentation
 
@@ -249,7 +249,7 @@ The script automatically:
    ```
 
 2. **Restart the MCP server**
-   - Local: `./run-local-mcp.sh` (auto-rebuilds index)
+   - Local: `./run-local-mcp.sh` (incrementally updates index)
    - AWS: `./run-awskb-mcp.sh` (auto-syncs to S3)
 
 3. **Documentation is automatically indexed**
@@ -379,11 +379,14 @@ pqsoft_search_docs("query", limit=20)
 # Check if database exists
 ls -lh src_mcp/sdlc_docs.db
 
-# Rebuild index
-cd src_mcp && uv run python build_index.py
+# Force full rebuild (removes DB and rebuilds from scratch)
+cd src_mcp && rm -f sdlc_docs.db sdlc_docs.db.wal && uv run python build_index.py
 
 # Check indexed documents
 cd src_mcp && python3 -c "import duckdb; conn = duckdb.connect('sdlc_docs.db', read_only=True); print(conn.execute('SELECT DISTINCT filename FROM documents').fetchall())"
+
+# Check file metadata tracking
+cd src_mcp && python3 -c "import duckdb; conn = duckdb.connect('sdlc_docs.db', read_only=True); print(conn.execute('SELECT filename, last_modified FROM file_metadata').fetchall())"
 ```
 
 ### AWS Knowledge Base MCP Server
@@ -408,7 +411,7 @@ See `aws_kb/README.md` for detailed AWS troubleshooting.
 | Setup        | 2 min                         | 10 min                          |
 | Latency      | <200ms                        | ~500ms                          |
 | Scalability  | Limited                       | Unlimited                       |
-| Maintenance  | Manual rebuild                | Automatic                       |
+| Maintenance  | Incremental updates           | Automatic                       |
 | Dependencies | sentence-transformers, DuckDB | boto3 only                      |
 | Vector Store | DuckDB                        | S3 Vectors                      |
 | Embeddings   | all-mpnet-base-v2             | Titan                           |
