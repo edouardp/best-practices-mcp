@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Integration tests for local MCP server using MCP client library."""
+"""Integration tests for local MCP server using MCP client library.
+
+Note: Each test spawns its own MCP server instance. Session-scoped fixtures
+cause hangs due to event loop lifecycle issues with pytest-asyncio:
+- pytest-asyncio creates function-scoped event loops by default
+- Session-scoped async fixtures require custom event loop management
+- The MCP client's async context managers don't clean up properly across tests
+
+With only 2 tests (~15s total), per-test isolation is acceptable.
+"""
 
 import pytest
 from pathlib import Path
