@@ -35,7 +35,7 @@ Two Model Context Protocol (MCP) servers providing search and document reading c
 ├─────────────────────────────────────────────────────────────┤
 │  docs/*.md → build_index.py → sdlc_docs.db                  │
 │  • Chunks documents with heading context                    │
-│  • Generates 768-dim vectors (all-mpnet-base-v2)            │
+│  • Generates 768-dim vectors (all-distilroberta-v1)         │
 │  • Creates BM25 full-text search index                      │
 │  • Stores in DuckDB with metadata                           │
 └─────────────────────────────────────────────────────────────┘
@@ -284,7 +284,7 @@ The script automatically:
 ## Technical Details
 
 ### Local MCP Server
-- **Embedding Model**: sentence-transformers/all-mpnet-base-v2 (768-dim)
+- **Embedding Model**: sentence-transformers/all-distilroberta-v1 (768-dim)
 - **Database**: DuckDB (embedded, read-only at runtime)
 - **Search**: BM25 + Vector + Cross-encoder reranking
 - **Size**: ~1-5MB database for typical documentation sets
@@ -362,8 +362,9 @@ chunks = chunk_text(content, chunk_size=400, overlap_lines=3)
 ### Change Embedding Model
 Edit both `src_mcp/build_index.py` and `src_mcp/server.py`:
 ```python
-model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-# Update embedding dimension in CREATE TABLE statement
+EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
+EMBEDDING_DIM = 384  # Update to match model dimensions
+# Also update EMBEDDING_DIM in CREATE TABLE statement
 ```
 
 ### Modify Search Limit
@@ -414,7 +415,7 @@ See `aws_kb/README.md` for detailed AWS troubleshooting.
 | Maintenance  | Incremental updates           | Automatic                       |
 | Dependencies | sentence-transformers, DuckDB | boto3 only                      |
 | Vector Store | DuckDB                        | S3 Vectors                      |
-| Embeddings   | all-mpnet-base-v2             | Titan                           |
+| Embeddings   | all-distilroberta-v1          | Titan                           |
 | Reranking    | ms-marco-MiniLM               | Not available in ap-southeast-2 |
 
 ## License
