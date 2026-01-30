@@ -652,39 +652,41 @@ app = FastAPI()
 async def logging_middleware(request: Request, call_next):
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
 
-    with log_context(
-        request_id=request_id,
-        operation="http_request"
-    ):
-        log = structlog.get_logger().bind(
-            method=request.method,
-            url=str(request.url),
-            user_agent=request.headers.get("user-agent"),
-            client_ip=request.client.host
-        )
+```python
+with log_context(
+    request_id=request_id,
+    operation="http_request"
+):
+    log = structlog.get_logger().bind(
+        method=request.method,
+        url=str(request.url),
+        user_agent=request.headers.get("user-agent"),
+        client_ip=request.client.host
+    )
 
-        start_time = time.time()
+    start_time = time.time()
 
-        try:
-            response = await call_next(request)
+    try:
+        response = await call_next(request)
 
-            duration_ms = (time.time() - start_time) * 1000
+        duration_ms = (time.time() - start_time) * 1000
 
-            log.info("Request completed",
-                    status_code=response.status_code,
-                    duration_ms=round(duration_ms, 2))
+        log.info("Request completed",
+                status_code=response.status_code,
+                duration_ms=round(duration_ms, 2))
 
-            response.headers["x-request-id"] = request_id
-            return response
+        response.headers["x-request-id"] = request_id
+        return response
 
-        except Exception as e:
-            duration_ms = (time.time() - start_time) * 1000
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
 
-            log.error("Request failed",
-                     duration_ms=round(duration_ms, 2),
-                     exception=e)
-            raise
+        log.error("Request failed",
+                 duration_ms=round(duration_ms, 2),
+                 exception=e)
+        raise
 ```
+
 
 **Key Processor Benefits:**
 
@@ -952,23 +954,14 @@ def process_data_with_pandas(data):
     return df.to_dict()
 
 # Layer structure for scientific libraries
-
 # layers/
-
 # └── python-scientific/
-
 #     └── python/
-
 #         └── lib/
-
 #             └── python3.13/
-
 #                 └── site-packages/
-
 #                     ├── numpy/
-
 #                     ├── pandas/
-
 #                     └── scipy/
 ```
 
