@@ -164,49 +164,23 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap_lines: int = OVE
 
 def process_markdown_files() -> None:
     """
-    Process all markdown files in docs/ directory and build vector database.
-    
-    Why this runs at build time:
-    - Embeddings are expensive to compute (CPU-intensive)
-    - Results are deterministic for same input
-    - Avoids startup delay when container runs
-    - Database is immutable after build (read-only at runtime)
-    
-    Database schema design:
-    - id: Primary key for efficient lookups
-    - title: Human-readable document name (from filename)
-    - filename: Relative path for read_documentation tool
-    - start_line/end_line: Precise location tracking
-    - content: Original text for display in search results
-    - embedding: 768-dimensional vector for semantic search
-    
-    Why FLOAT[768]: all-mpnet-base-v2 produces 768-dimensional embeddings
+    Incrementally update vector database based on file changes.
+    Only processes files that are new, modified, or removed.
     """
     docs_dir = Path("../docs")
     
-    # Create sample docs if none exist
-    # Why: Provides working example out of the box for testing
     if not docs_dir.exists():
         print("No docs directory found, creating sample docs...")
         create_sample_docs()
     
-    # Load embedding model
-    # Why all-mpnet-base-v2: Higher quality 768-dim embeddings for better search results
-    # Why load once: Model loading is expensive, reuse for all documents
     print("Loading embedding model...")
     model = SentenceTransformer(EMBEDDING_MODEL)
     
-    # Initialize database
-    # Why DuckDB: Embedded database with native vector support, no separate server needed
     conn = duckdb.connect('sdlc_docs.db')
     
-    # Drop existing table to rebuild from scratch
-    conn.execute("DROP TABLE IF EXISTS documents")
-    
-    # Create table with vector column
-    # Why FLOAT[768]: Fixed-size array for efficient vector operations (768-dim embeddings)
+    # Create tables if they don't exist
     conn.execute(f"""
-        CREATE TABLE documents (
+        CREATE TABLE IF NOT EXISTS documents (
             id INTEGER PRIMARY KEY,
             title TEXT,
             filename TEXT,
@@ -217,56 +191,81 @@ def process_markdown_files() -> None:
         )
     """)
     
-    doc_id = 0
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS file_metadata (
+            filename TEXT PRIMARY KEY,
+            last_modified DOUBLE
+        )
+    """)
     
-    # Process all markdown files recursively
-    # Why **/*.md: Supports nested directory structure
+    # Get current files on disk
+    current_files = {}
     for md_file in docs_dir.glob("**/*.md"):
-        # Skip files in hidden directories (starting with . but not ..)
-        # Why: Prevents indexing .git, .vscode, etc.
         relative_path = md_file.relative_to(docs_dir)
         if any(part.startswith('.') and part != '..' for part in relative_path.parts):
             continue
-            
         relative_path = str(relative_path)
-        print(f"Processing {relative_path}")
+        current_files[relative_path] = md_file.stat().st_mtime
+    
+    # Get tracked files from DB
+    tracked_files = {row[0]: row[1] for row in conn.execute("SELECT filename, last_modified FROM file_metadata").fetchall()}
+    
+    # Find files to remove
+    removed_files = set(tracked_files.keys()) - set(current_files.keys())
+    for filename in removed_files:
+        print(f"Removing {filename}")
+        conn.execute("DELETE FROM documents WHERE filename = ?", (filename,))
+        conn.execute("DELETE FROM file_metadata WHERE filename = ?", (filename,))
+    
+    # Find files to add or update
+    files_to_process = []
+    for filename, mtime in current_files.items():
+        if filename not in tracked_files or mtime > tracked_files[filename]:
+            files_to_process.append((filename, mtime))
+    
+    if not files_to_process:
+        print("No files to update")
+        conn.close()
+        return
+    
+    # Get next available ID
+    max_id = conn.execute("SELECT COALESCE(MAX(id), -1) FROM documents").fetchone()[0]
+    doc_id = max_id + 1
+    
+    # Process changed files
+    for filename, mtime in files_to_process:
+        print(f"Processing {filename}")
         
-        # Read file content
-        # Why utf-8: Standard encoding for markdown files
+        # Delete old chunks
+        conn.execute("DELETE FROM documents WHERE filename = ?", (filename,))
+        
+        # Read and process file
+        md_file = docs_dir / filename
         content = md_file.read_text(encoding='utf-8')
-        
-        # Generate human-readable title from filename
-        # Why replace: Convert kebab-case and snake_case to Title Case
         title = md_file.stem.replace('_', ' ').replace('-', ' ').title()
-        
-        # Split document into chunks
         chunks = chunk_text(content, chunk_size=CHUNK_SIZE, overlap_lines=OVERLAP_LINES)
         
         for chunk_info in chunks:
             chunk_text_content = chunk_info['text']
-            
-            # Skip very short chunks (likely just headings or whitespace)
-            # Why 50 chars: Arbitrary threshold, too short to be meaningful
             if len(chunk_text_content.strip()) < MIN_CHUNK_LENGTH:
                 continue
             
-            # Generate embedding for this chunk
-            # Why encode each chunk: Provides more precise search than whole-document embeddings
-            # Returns numpy array of shape (768,)
             embedding = model.encode(chunk_text_content)
-            
-            # Insert into database
-            # Why tolist(): DuckDB expects Python list, not numpy array
             conn.execute("""
                 INSERT INTO documents (id, title, filename, start_line, end_line, content, embedding)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (doc_id, title, relative_path, chunk_info['start_line'], 
+            """, (doc_id, title, filename, chunk_info['start_line'], 
                   chunk_info['end_line'], chunk_text_content, embedding.tolist()))
-            
             doc_id += 1
+        
+        # Update metadata
+        conn.execute("""
+            INSERT OR REPLACE INTO file_metadata (filename, last_modified)
+            VALUES (?, ?)
+        """, (filename, mtime))
     
-    # Create FTS index for BM25 search
-    print("Creating FTS index...")
+    # Rebuild FTS index
+    print("Updating FTS index...")
     conn.execute("INSTALL fts")
     conn.execute("LOAD fts")
     conn.execute("""
@@ -274,10 +273,8 @@ def process_markdown_files() -> None:
             stemmer='english', stopwords='english', overwrite=1)
     """)
     
-    # Commit and close
-    # Why explicit close: Ensures database is properly flushed to disk
     conn.close()
-    print(f"Indexed {doc_id} document chunks")
+    print(f"Updated {len(files_to_process)} files")
 
 
 def create_sample_docs() -> None:
