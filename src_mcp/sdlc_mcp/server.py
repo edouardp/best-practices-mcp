@@ -190,59 +190,6 @@ def pqsoft_read_docs(documentation_path: str, start_line: int, end_line: int) ->
         return f"Error reading file: {str(e)}"
 
 
-@mcp.tool()
-def pqsoft_recommend_docs(title: str, limit: int = 5) -> List[Dict]:
-    """Get related documentation based on content similarity.
-    
-    Args:
-        title: Document title to search for
-        limit: Maximum number of recommendations to return (default: 5, max: 20)
-    
-    Returns:
-        List of recommended documents with title, context, similarity score, and filename
-    """
-    # Validate and cap limit
-    limit = min(max(1, limit), 20)
-    
-    # Find the source document
-    current_results = conn.execute(
-        "SELECT content, embedding, filename FROM documents WHERE title LIKE ? LIMIT 1",
-        (f"%{title}%",)
-    ).fetchone()
-    
-    if not current_results:
-        # Provide helpful suggestions when document not found
-        suggestions = conn.execute("""
-            SELECT DISTINCT title FROM documents 
-            WHERE title LIKE ? LIMIT 3
-        """, (f"%{title.split()[0] if title.split() else title}%",)).fetchall()
-        
-        return [{
-            "error": f"Document matching '{title}' not found",
-            "suggestions": [s[0] for s in suggestions] if suggestions else []
-        }]
-    
-    current_content, current_embedding, current_filename = current_results
-    
-    # Find similar documents
-    results = conn.execute("""
-        SELECT DISTINCT title, content, filename,
-               array_cosine_similarity(embedding, ?::FLOAT[768]) as similarity
-        FROM documents 
-        WHERE title NOT LIKE ?
-        ORDER BY similarity DESC
-        LIMIT ?
-    """, (current_embedding, f"%{title}%", limit)).fetchall()
-    
-    return [
-        {
-            "title": r[0],
-            "context": r[1][:200] + "..." if len(r[1]) > 200 else r[1],
-            "filename": r[2],
-            "similarity": round(float(r[3]), 3)
-        }
-        for r in results
-    ]
 
 
 def create_server() -> FastMCP:

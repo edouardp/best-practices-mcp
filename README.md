@@ -125,9 +125,6 @@ pqsoft_read_docs('04-testing-strategies.md', 1, 50)
 # Returns lines 1-50 from the file
 ```
 
-### `pqsoft_recommend_docs(title: str) -> list[dict]`
-Get related documentation based on content similarity.
-
 ## Development & Testing
 
 ### Local MCP Server
