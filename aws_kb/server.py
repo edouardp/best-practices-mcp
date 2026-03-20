@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 import boto3
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 mcp = FastMCP("AWS Knowledge Base SDLC Docs")
 
