@@ -419,12 +419,42 @@ See `aws_kb/README.md` for detailed AWS troubleshooting.
 
 This project is provided as-is for SDLC documentation purposes.
 
+## Testing
+
+### Unit Tests
+
+Run the unit tests using `uv`:
+
+```bash
+cd src_mcp
+uv run pytest tests/
+```
+
+Tests require the database to be built first:
+
+```bash
+cd src_mcp
+uv run python build_index.py
+uv run pytest tests/
+```
+
+### Integration Tests
+
+Test the search functionality:
+
+```bash
+cd src_mcp
+uv run python mcp_search.py "testing strategies"
+uv run python test_read.py 04-testing-strategies.md 1 50
+```
+
 ## Contributing
 
-1. Add your documentation to `docs/`
-2. Test with local server: `./run-local-mcp.sh`
-3. Verify search works
-4. Commit and push
+ 1. Add your documentation to `docs/`
+ 2. Run unit tests: `cd src_mcp && uv run pytest tests/`
+ 3. Test with local server: `./run-local-mcp.sh`
+ 4. Verify search works
+ 5. Commit and push
 
 ## Status
 
